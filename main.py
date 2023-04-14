@@ -13,6 +13,7 @@
 
 import pychrono.core as chrono
 import pychrono.irrlicht as chronoirr
+from pynput import keyboard
 
 print("Example: create a sys and visualize it in realtime 3D");
 
@@ -74,7 +75,40 @@ vis.AddTypicalLights()
 #  Run the simulation
 #
 
+is_space_pressed = False
+
+
+def on_press(key):
+    global is_space_pressed
+    if key == keyboard.Key.space:
+        is_space_pressed = True
+
+        force = chrono.ChVectorD(0, 100, 0)  # Example force in the negative z-direction
+        point = chrono.ChVectorD(0, 0, 0)  # Example force in the negative z-direction
+        local = True
+        # Apply the force to the center of mass of the drone
+        drone.Accumulate_force(force, point, local)
+
+
+def on_release(key):
+    global is_space_pressed
+    # print('{0} released'.format(key))
+    if key == keyboard.Key.space:
+        is_space_pressed = False
+
+        drone.Empty_forces_accumulators()
+
+
+listener = keyboard.Listener(
+    on_press=on_press,
+    on_release=on_release)
+listener.start()
+
 while vis.Run():
+
+    if is_space_pressed:
+        pass
+
     vis.BeginScene()
     vis.Render()
     vis.EnableCollisionShapeDrawing(True)
