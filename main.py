@@ -1,286 +1,107 @@
-# =============================================================================
-# PROJECT CHRONO - http://projectchrono.org
-#
-# Copyright (c) 2019 projectchrono.org
-# All rights reserved.
-#
-# Use of this source code is governed by a BSD-style license that can be found
-# in the LICENSE file at the top level of the distribution and at
-# http://projectchrono.org/license-chrono.txt.
-#
-# =============================================================================
-
-
-import pychrono.core as chrono
-import pychrono.irrlicht as chronoirr
-from pynput import keyboard
-import math
-
-# ---------------------------------------------------------------------
-#
-#  Create the simulation sys and add items
-#
-
-sys = chrono.ChSystemNSC()
-
-material = chrono.ChMaterialSurfaceNSC()
-material.SetFriction(0.3)
-material.SetCompliance(0)
-
-mfloor = chrono.ChBodyEasyBox(3, 0.2, 3, 1000)
-mfloor.SetBodyFixed(True)
-mfloor.SetCollide(True)
-mfloor.GetCollisionModel().AddBox(material, 1.5, 0.1, 1.5)
-mfloor.GetCollisionModel().BuildModel()
-sys.Add(mfloor)
-
-drone_x, drone_y, drone_z = (0.3475, 0.1077, 0.283)  # dimensions of DJI drone
-drone_kg = 0.895
-drone = chrono.ChBodyEasyBox(drone_x, drone_y, drone_z, drone_kg / drone_x / drone_y / drone_z)
-drone.SetMass(0.895)
-drone.SetPos(chrono.ChVectorD(0, 1, 0))
-drone.GetCollisionModel().AddBox(material, drone_x / 2.0, drone_y / 2.0, drone_z / 2.0)
-drone.SetCollide(True)
-
-vis_drone = drone.GetVisualShape(0)
-vis_drone.SetColor(chrono.ChColor(1, 0, 0))
-
-sys.Add(drone)
-
-mray = chrono.ChBodyEasyBox(0, 0.0, 0, 0)
-mray.SetBodyFixed(True)
-sys.Add(mray)
-
-drone_ray_shapes = []
-forward = chrono.ChVectorD(1, 0, 0)
-right = chrono.ChVectorD(0, 0, 1)
-up = chrono.ChVectorD(0, 1, 0)
-
-drone_ray_dirs = [
-    forward,
-    chrono.ChVectorD(-1, 0, 0),
-    up,
-    chrono.ChVectorD(0, -1, 0),
-    right,
-    chrono.ChVectorD(0, 0, -1),
-    (forward + right).GetNormalized(),
-    (forward - right).GetNormalized(),
-    (-forward + right).GetNormalized(),
-    (-forward - right).GetNormalized(),
-    (forward + right + up).GetNormalized(),
-    (forward + right - up).GetNormalized(),
-    (forward - right + up).GetNormalized(),
-    (forward - right - up).GetNormalized(),
-    (-forward + right + up).GetNormalized(),
-    (-forward - right + up).GetNormalized(),
-    (-forward + right - up).GetNormalized(),
-    (-forward - right - up).GetNormalized(),
-]
-
-for i in range(18):
-    # mpath = chrono.ChLinePath()
-    # mseg1 = chrono.ChLineSegment(chrono.ChVectorD(0, 0, 0), chrono.ChVectorD(0, 0, 0))
-    # mpath.AddSubLine(mseg1)
-    # mpath.Set_closed(False)
-
-    # Create a ChLineShape, a visualization asset for lines.
-    # The ChLinePath is a special type of ChLine and it can be visualized.
-    mpathasset = chrono.ChLineShape()
-    # mpathasset.SetLineGeometry(mpath)
-    mpathasset.SetColor(chrono.ChColor(1, 1, 1))
-    mray.AddVisualShape(mpathasset)
-    drone_ray_shapes.append(mpathasset)
-
-# ---------------------------------------------------------------------
-#
-#  Create an Irrlicht application to visualize the sys
-#
-
-vis = chronoirr.ChVisualSystemIrrlicht()
-vis.AttachSystem(sys)
-vis.SetWindowSize(1024, 768)
-vis.SetWindowTitle('Paths demo')
-vis.Initialize()
-vis.AddLogo(chrono.GetChronoDataFile('logo_pychrono_alpha.png'))
-vis.AddSkyBox()
-camera_id = vis.AddCamera(chrono.ChVectorD(-5, 2, 0), chrono.ChVectorD(0, 2, 0))
-vis.AddTypicalLights()
+from sim import DroneSimulation
 
-# ---------------------------------------------------------------------
-#
-#  Run the simulation
-#
+import numpy as np
+import pygad
+from keras import Sequential, Input
+from keras.layers import Dense
 
-keys = {
-    keyboard.Key.space: False,
-    'w': False,
-    's': False,
-    'a': False,
-    'd': False,
-    'q': False,
-    'e': False
-}
+# Define the problem
+input_size = 25  # 3D coordinates of the drone
+output_size = 4  # Output for the 4 thrusters
+target = np.array([50, 50, 8])  # Destination coordinates
+obstacles = []  # List of 3D coordinates of obstacles
 
 
-def on_press(key):
-    global keys
+def fitness_func(ga_instance, solution, solution_idx):
+    # Create a neural network using the solution weights and biases
+    network = create_network(solution)
 
-    try:
-        keys[key.char] = True
-    except AttributeError:
-        keys[key] = True
+    # Run the simulation and calculate the fitness score
+    fitness = run_simulation(network, solution_idx)
 
+    # Return the fitness score
+    return fitness
 
-def on_release(key):
-    global keys
-    try:
-        keys[key.char] = False
-    except AttributeError:
-        keys[key] = False
 
+def run_simulation(network, solution_idx):
+    # Run the simulation with the given neural network
+    # e.g. use a physics engine to simulate the drone movement
+    # evaluate the fitness based on the problem definition
 
-listener = keyboard.Listener(
-    on_press=on_press,
-    on_release=on_release)
-listener.start()
+    simulation = DroneSimulation()
 
+    while simulation.window_open():
 
-class Propeller:
+        rays = np.array(simulation.DroneSensors())
+        rotation = np.array(simulation.DroneRotation())
 
-    def __init__(self, position, force=0.0):
-        self.position = position
-        self.force = force
+        predictions = network.predict(rays + rotation + target)
 
+        print(predictions)
+        for i in range(4):
+            simulation.propellers[i].force = predictions[i]
 
-max_force = chrono.ChVectorD(0.0, 10.0, 0.0)  # Example force in the negative z-direction
-local = True
+        simulation.Update()
 
-propellers = (
-    Propeller(chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0)),
-    Propeller(chrono.ChVectorD(drone_x / 2.0, 0, drone_z / 2.0)),
-    Propeller(chrono.ChVectorD(-drone_x / 2.0, 0, drone_z / 2.0)),
-    Propeller(chrono.ChVectorD(-drone_x / 2.0, 0, -drone_z / 2.0))
-)
+        simulation.Render()
 
+    score = 1.0
+    return score
 
-def DroneManualInput():
-    hover_force_mult = 0.8  # Example force in the negative z-direction
 
-    if keys[keyboard.Key.space]:
-        # point = chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0)  # Example force in the negative z-direction
+def create_network(solution):
+    print(len(solution))
+    print(solution)
 
-        for prop in propellers:
-            prop.force = 1.0
+    # Create a neural network with 25 input nodes and 4 output nodes
+    network = Sequential([
+        Input(shape=(25,)),
+        Dense(12, activation='sigmoid', use_bias=True),
+        Dense(4, activation='sigmoid', use_bias=True)
+    ])
 
-    elif keys['w']:
-        propellers[0].force = hover_force_mult
-        propellers[1].force = hover_force_mult
+    # Set the weights and biases of the neural network to the values in the solution array
+    start = 0
+    for i, layer in enumerate(network.layers):
+        # Get the shape of the layer's weights
+        shape = layer.get_weights()[0].shape
 
-        propellers[2].force = 1.0
-        propellers[3].force = 1.0
-    elif keys['s']:
+        # Calculate the number of weights and biases for this layer
+        num_weights = shape[0] * shape[1]
+        num_biases = shape[1]
+        print(num_weights)
+        print(num_biases)
+        # Get the weights and biases from the solution array
+        end = start + num_weights
+        weights = solution[start:end].reshape(shape)
+        start = end
+        end = start + num_biases
+        biases = np.array(solution[start:end])
+        start = end
 
-        propellers[2].force = hover_force_mult
-        propellers[3].force = hover_force_mult
+        # Set the layer's weights and biases to the values from the solution array
 
-        propellers[0].force = 1.0
-        propellers[1].force = 1.0
+        layer.set_weights([weights, biases])
 
-    elif keys['d']:
+    return network
 
-        propellers[1].force = hover_force_mult
-        propellers[2].force = hover_force_mult
 
-        propellers[0].force = 1.0
-        propellers[3].force = 1.0
+# Create an initial population
+num_solutions = 10
+sol_per_pop = 5
+"""
+initial_population = np.random.uniform(low=-1, high=1,
+                                       size=(num_solutions, 25 * 10)) # input_size * output_size
+"""
+# Create a genetic algorithm object and run it
+ga_instance = pygad.GA(num_generations=2,
+                       num_parents_mating=2,
+                       fitness_func=fitness_func,
+                       sol_per_pop=sol_per_pop,
+                       num_genes=25 * 12 + 12)
 
-    elif keys['a']:
+ga_instance.run()
 
-        propellers[0].force = hover_force_mult
-        propellers[3].force = hover_force_mult
-
-        propellers[1].force = 1.0
-        propellers[2].force = 1.0
-    elif keys['q']:
-        propellers[1].force = 1.0
-        propellers[3].force = 1.0
-
-        propellers[0].force = hover_force_mult
-        propellers[2].force = hover_force_mult
-    elif keys['e']:
-        propellers[0].force = 1.0
-        propellers[2].force = 1.0
-
-        propellers[1].force = hover_force_mult
-        propellers[3].force = hover_force_mult
-    else:
-        propellers[0].force = 0.0
-        propellers[1].force = 0.0
-        propellers[2].force = 0.0
-        propellers[3].force = 0.0
-
-
-def CreateLine(start, end):
-    mpath = chrono.ChLinePath()
-    mseg1 = chrono.ChLineSegment(start, end)
-    mpath.AddSubLine(mseg1)
-    mpath.Set_closed(False)
-    return mpath
-
-
-def DroneSensors():
-    start_point = drone.GetPos()
-
-    for i in range(len(drone_ray_dirs)):
-        dir = drone_ray_dirs[i]
-        ray_length = 100.0
-        end_point = drone.GetPos() + drone.TransformDirectionLocalToParent(dir) * ray_length
-
-        collision_system = sys.GetCollisionSystem()
-
-        ray_result = chrono.ChRayhitResult()
-        collision_system.RayHit(start_point, end_point, ray_result)
-
-        # Check if there was a collision
-        if ray_result.hit:
-            # print(ray_result.abs_hitPoint)
-            drone_ray_shapes[i].SetLineGeometry(CreateLine(start_point, ray_result.abs_hitPoint))
-            drone_ray_shapes[i].SetColor(chrono.ChColor(1, 0, 0))
-        else:
-            drone_ray_shapes[i].SetLineGeometry(CreateLine(start_point, end_point))
-            drone_ray_shapes[i].SetColor(chrono.ChColor(1, 1, 1))
-
-
-while vis.Run():
-
-    vis.BeginScene()
-    vis.Render()
-    vis.EnableCollisionShapeDrawing(True)
-    vis.EndScene()
-    sys.DoStepDynamics(5e-3)
-
-    DroneSensors()
-    # vis.SetCameraTarget(drone.GetPos())
-    DroneManualInput()
-
-    yaw = (propellers[1].force + propellers[3].force) - (propellers[0].force + propellers[2].force)
-    yaw_multiplier = 10.0
-
-    current_rotation = drone.GetRot()
-
-    # Define desired rotation angle (in radians)
-    desired_rotation_angle = math.radians(yaw_multiplier * yaw)
-
-    desired_rotation = chrono.ChQuaternionD()
-    desired_rotation.Q_from_AngAxis(desired_rotation_angle,
-                                    chrono.ChVectorD(0, 1, 0))  # Rotate by desired_rotation_angle radians about y-axis
-
-    # Multiply current rotation by desired rotation to get new rotation
-    new_rotation = current_rotation * desired_rotation
-
-    drone.SetRot(new_rotation)
-
-    drone.Empty_forces_accumulators()
-
-    for prop in propellers:
-        drone.Accumulate_force(max_force * prop.force, prop.position, local)
+# Retrieve the best solution
+best_solution, best_solution_fitness = ga_instance.best_solution()
+best_network = create_network(best_solution)
