@@ -45,17 +45,51 @@ drone.SetCollide(True)
 vis_drone = drone.GetVisualShape(0)
 vis_drone.SetColor(chrono.ChColor(1, 0, 0))
 
-"""
-vis_drone_shape = chrono.ChBoxShape(chrono.ChBox(drone_x, drone_y, drone_z))
-vis_drone_shape.SetColor(chrono.ChColor(1, 0, 0))
-
-vis_drone = chrono.ChVisualModel()
-vis_drone.AddShape(vis_drone_shape)
-
-drone.AddVisualShape(vis_drone_shape)
-"""
-
 sys.Add(drone)
+
+mray = chrono.ChBodyEasyBox(0, 0.0, 0, 0)
+mray.SetBodyFixed(True)
+sys.Add(mray)
+
+drone_ray_shapes = []
+forward = chrono.ChVectorD(1, 0, 0)
+right = chrono.ChVectorD(0, 0, 1)
+up = chrono.ChVectorD(0, 1, 0)
+
+drone_ray_dirs = [
+    forward,
+    chrono.ChVectorD(-1, 0, 0),
+    up,
+    chrono.ChVectorD(0, -1, 0),
+    right,
+    chrono.ChVectorD(0, 0, -1),
+    (forward + right).GetNormalized(),
+    (forward - right).GetNormalized(),
+    (-forward + right).GetNormalized(),
+    (-forward - right).GetNormalized(),
+    (forward + right + up).GetNormalized(),
+    (forward + right - up).GetNormalized(),
+    (forward - right + up).GetNormalized(),
+    (forward - right - up).GetNormalized(),
+    (-forward + right + up).GetNormalized(),
+    (-forward - right + up).GetNormalized(),
+    (-forward + right - up).GetNormalized(),
+    (-forward - right - up).GetNormalized(),
+]
+
+for i in range(18):
+    # mpath = chrono.ChLinePath()
+    # mseg1 = chrono.ChLineSegment(chrono.ChVectorD(0, 0, 0), chrono.ChVectorD(0, 0, 0))
+    # mpath.AddSubLine(mseg1)
+    # mpath.Set_closed(False)
+
+    # Create a ChLineShape, a visualization asset for lines.
+    # The ChLinePath is a special type of ChLine and it can be visualized.
+    mpathasset = chrono.ChLineShape()
+    # mpathasset.SetLineGeometry(mpath)
+    mpathasset.SetColor(chrono.ChColor(1, 1, 1))
+    mray.AddVisualShape(mpathasset)
+    drone_ray_shapes.append(mpathasset)
 
 # ---------------------------------------------------------------------
 #
@@ -186,6 +220,37 @@ def DroneManualInput():
         propellers[3].force = 0.0
 
 
+def CreateLine(start, end):
+    mpath = chrono.ChLinePath()
+    mseg1 = chrono.ChLineSegment(start, end)
+    mpath.AddSubLine(mseg1)
+    mpath.Set_closed(False)
+    return mpath
+
+
+def DroneSensors():
+    start_point = drone.GetPos()
+
+    for i in range(len(drone_ray_dirs)):
+        dir = drone_ray_dirs[i]
+        ray_length = 100.0
+        end_point = drone.GetPos() + drone.TransformDirectionLocalToParent(dir) * ray_length
+
+        collision_system = sys.GetCollisionSystem()
+
+        ray_result = chrono.ChRayhitResult()
+        collision_system.RayHit(start_point, end_point, ray_result)
+
+        # Check if there was a collision
+        if ray_result.hit:
+            # print(ray_result.abs_hitPoint)
+            drone_ray_shapes[i].SetLineGeometry(CreateLine(start_point, ray_result.abs_hitPoint))
+            drone_ray_shapes[i].SetColor(chrono.ChColor(1, 0, 0))
+        else:
+            drone_ray_shapes[i].SetLineGeometry(CreateLine(start_point, end_point))
+            drone_ray_shapes[i].SetColor(chrono.ChColor(1, 1, 1))
+
+
 while vis.Run():
 
     vis.BeginScene()
@@ -194,6 +259,7 @@ while vis.Run():
     vis.EndScene()
     sys.DoStepDynamics(5e-3)
 
+    DroneSensors()
     # vis.SetCameraTarget(drone.GetPos())
     DroneManualInput()
 
