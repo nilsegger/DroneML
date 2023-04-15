@@ -14,13 +14,7 @@
 import pychrono.core as chrono
 import pychrono.irrlicht as chronoirr
 from pynput import keyboard
-
-print("Example: create a sys and visualize it in realtime 3D");
-
-# The path to the Chrono data directory containing various assets (meshes, textures, data files)
-# is automatically set, relative to the default location of this demo.
-# If running from a different directory, you must change the path to the data directory with:
-# chrono.SetChronoDataPath('path/to/data')
+import math
 
 # ---------------------------------------------------------------------
 #
@@ -84,18 +78,31 @@ vis.AddTypicalLights()
 #
 
 keys = {
-    keyboard.Key.space: False
+    keyboard.Key.space: False,
+    'w': False,
+    's': False,
+    'a': False,
+    'd': False,
+    'q': False,
+    'e': False
 }
 
 
 def on_press(key):
     global keys
-    keys[key] = True
+
+    try:
+        keys[key.char] = True
+    except AttributeError:
+        keys[key] = True
 
 
 def on_release(key):
     global keys
-    keys[key] = False
+    try:
+        keys[key.char] = False
+    except AttributeError:
+        keys[key] = False
 
 
 listener = keyboard.Listener(
@@ -103,8 +110,20 @@ listener = keyboard.Listener(
     on_release=on_release)
 listener.start()
 
-propellers = (chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0), chrono.ChVectorD(drone_x / 2.0, 0, drone_z / 2.0),
-              chrono.ChVectorD(-drone_x / 2.0, 0, drone_z / 2.0), chrono.ChVectorD(-drone_x / 2.0, 0, -drone_z / 2.0))
+
+class Propeller:
+
+    def __init__(self, position, force=0.0):
+        self.position = position
+        self.force = force
+
+
+propellers = (
+    Propeller(chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0)),
+    Propeller(chrono.ChVectorD(drone_x / 2.0, 0, drone_z / 2.0)),
+    Propeller(chrono.ChVectorD(-drone_x / 2.0, 0, drone_z / 2.0)),
+    Propeller(chrono.ChVectorD(-drone_x / 2.0, 0, -drone_z / 2.0))
+)
 
 while vis.Run():
 
@@ -116,14 +135,81 @@ while vis.Run():
 
     # vis.SetCameraTarget(drone.GetPos())
 
+    max_force = chrono.ChVectorD(0.0, 10.0, 0.0)  # Example force in the negative z-direction
+    local = True
+    hover_force_mult = 0.8  # Example force in the negative z-direction
+
     if keys[keyboard.Key.space]:
-        drone.Empty_forces_accumulators()
-        force = chrono.ChVectorD(0, 10, 0)  # Example force in the negative z-direction
         # point = chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0)  # Example force in the negative z-direction
-        local = True
 
         for prop in propellers:
-            # Apply the force to the center of mass of the drone
-            drone.Accumulate_force(force, prop, local)
+            prop.force = 1.0
+
+    elif keys['w']:
+        propellers[0].force = hover_force_mult
+        propellers[1].force = hover_force_mult
+
+        propellers[2].force = 1.0
+        propellers[3].force = 1.0
+    elif keys['s']:
+
+        propellers[2].force = hover_force_mult
+        propellers[3].force = hover_force_mult
+
+        propellers[0].force = 1.0
+        propellers[1].force = 1.0
+
+    elif keys['d']:
+
+        propellers[1].force = hover_force_mult
+        propellers[2].force = hover_force_mult
+
+        propellers[0].force = 1.0
+        propellers[3].force = 1.0
+
+    elif keys['a']:
+
+        propellers[0].force = hover_force_mult
+        propellers[3].force = hover_force_mult
+
+        propellers[1].force = 1.0
+        propellers[2].force = 1.0
+    elif keys['q']:
+        propellers[1].force = 1.0
+        propellers[3].force = 1.0
+
+        propellers[0].force = hover_force_mult
+        propellers[2].force = hover_force_mult
+    elif keys['e']:
+        propellers[0].force = 1.0
+        propellers[2].force = 1.0
+
+        propellers[1].force = hover_force_mult
+        propellers[3].force = hover_force_mult
     else:
-        drone.Empty_forces_accumulators()
+        propellers[0].force = 0.0
+        propellers[1].force = 0.0
+        propellers[2].force = 0.0
+        propellers[3].force = 0.0
+
+    yaw = (propellers[1].force + propellers[3].force) - (propellers[0].force + propellers[2].force)
+    yaw_multiplier = 10.0
+
+    current_rotation = drone.GetRot()
+
+    # Define desired rotation angle (in radians)
+    desired_rotation_angle = math.radians(yaw_multiplier * yaw)
+
+    desired_rotation = chrono.ChQuaternionD()
+    desired_rotation.Q_from_AngAxis(desired_rotation_angle,
+                                    chrono.ChVectorD(0, 1, 0))  # Rotate by desired_rotation_angle radians about y-axis
+
+    # Multiply current rotation by desired rotation to get new rotation
+    new_rotation = current_rotation * desired_rotation
+
+    drone.SetRot(new_rotation)
+
+    drone.Empty_forces_accumulators()
+
+    for prop in propellers:
+        drone.Accumulate_force(max_force * prop.force, prop.position, local)
