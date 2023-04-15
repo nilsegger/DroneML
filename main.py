@@ -118,6 +118,9 @@ class Propeller:
         self.force = force
 
 
+max_force = chrono.ChVectorD(0.0, 10.0, 0.0)  # Example force in the negative z-direction
+local = True
+
 propellers = (
     Propeller(chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0)),
     Propeller(chrono.ChVectorD(drone_x / 2.0, 0, drone_z / 2.0)),
@@ -125,18 +128,8 @@ propellers = (
     Propeller(chrono.ChVectorD(-drone_x / 2.0, 0, -drone_z / 2.0))
 )
 
-while vis.Run():
 
-    vis.BeginScene()
-    vis.Render()
-    vis.EnableCollisionShapeDrawing(True)
-    vis.EndScene()
-    sys.DoStepDynamics(5e-3)
-
-    # vis.SetCameraTarget(drone.GetPos())
-
-    max_force = chrono.ChVectorD(0.0, 10.0, 0.0)  # Example force in the negative z-direction
-    local = True
+def DroneManualInput():
     hover_force_mult = 0.8  # Example force in the negative z-direction
 
     if keys[keyboard.Key.space]:
@@ -191,6 +184,18 @@ while vis.Run():
         propellers[1].force = 0.0
         propellers[2].force = 0.0
         propellers[3].force = 0.0
+
+
+while vis.Run():
+
+    vis.BeginScene()
+    vis.Render()
+    vis.EnableCollisionShapeDrawing(True)
+    vis.EndScene()
+    sys.DoStepDynamics(5e-3)
+
+    # vis.SetCameraTarget(drone.GetPos())
+    DroneManualInput()
 
     yaw = (propellers[1].force + propellers[3].force) - (propellers[0].force + propellers[2].force)
     yaw_multiplier = 10.0
