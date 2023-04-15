@@ -40,18 +40,25 @@ mfloor.GetCollisionModel().AddBox(material, 1.5, 0.1, 1.5)
 mfloor.GetCollisionModel().BuildModel()
 sys.Add(mfloor)
 
-drone = chrono.ChBodyEasyBox(1, 0.2, 1, 1000)
+drone_x, drone_y, drone_z = (0.3475, 0.1077, 0.283)
+drone = chrono.ChBodyEasyBox(drone_x, drone_y, drone_z, 1000)
+drone.SetMass(0.895)
 drone.SetPos(chrono.ChVectorD(0, 1, 0))
-drone.GetCollisionModel().AddBox(material, 0.5, 0.1, 0.5)
+drone.GetCollisionModel().AddBox(material, drone_x / 2.0, drone_y / 2.0, drone_z / 2.0)
 drone.SetCollide(True)
 
-vis_drone_shape = chrono.ChBoxShape(chrono.ChBox(1, 0.2, 1))
+vis_drone = drone.GetVisualShape(0)
+vis_drone.SetColor(chrono.ChColor(1, 0, 0))
+
+"""
+vis_drone_shape = chrono.ChBoxShape(chrono.ChBox(drone_x, drone_y, drone_z))
 vis_drone_shape.SetColor(chrono.ChColor(1, 0, 0))
 
 vis_drone = chrono.ChVisualModel()
 vis_drone.AddShape(vis_drone_shape)
 
 drone.AddVisualShape(vis_drone_shape)
+"""
 
 sys.Add(drone)
 
@@ -75,28 +82,19 @@ vis.AddTypicalLights()
 #  Run the simulation
 #
 
-is_space_pressed = False
+keys = {
+    keyboard.Key.space: False
+}
 
 
 def on_press(key):
-    global is_space_pressed
-    if key == keyboard.Key.space:
-        is_space_pressed = True
-
-        force = chrono.ChVectorD(0, 100, 0)  # Example force in the negative z-direction
-        point = chrono.ChVectorD(0, 0, 0)  # Example force in the negative z-direction
-        local = True
-        # Apply the force to the center of mass of the drone
-        drone.Accumulate_force(force, point, local)
+    global keys
+    keys[key] = True
 
 
 def on_release(key):
-    global is_space_pressed
-    # print('{0} released'.format(key))
-    if key == keyboard.Key.space:
-        is_space_pressed = False
-
-        drone.Empty_forces_accumulators()
+    global keys
+    keys[key] = False
 
 
 listener = keyboard.Listener(
@@ -106,8 +104,15 @@ listener.start()
 
 while vis.Run():
 
-    if is_space_pressed:
-        pass
+    if keys[keyboard.Key.space]:
+        force = chrono.ChVectorD(0, 10, 0)  # Example force in the negative z-direction
+        point = chrono.ChVectorD(0, 0, 0)  # Example force in the negative z-direction
+        local = True
+        # Apply the force to the center of mass of the drone
+        drone.Empty_forces_accumulators()
+        drone.Accumulate_force(force, point, local)
+    else:
+        drone.Empty_forces_accumulators()
 
     vis.BeginScene()
     vis.Render()
