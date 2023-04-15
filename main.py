@@ -40,8 +40,9 @@ mfloor.GetCollisionModel().AddBox(material, 1.5, 0.1, 1.5)
 mfloor.GetCollisionModel().BuildModel()
 sys.Add(mfloor)
 
-drone_x, drone_y, drone_z = (0.3475, 0.1077, 0.283)
-drone = chrono.ChBodyEasyBox(drone_x, drone_y, drone_z, 1000)
+drone_x, drone_y, drone_z = (0.3475, 0.1077, 0.283)  # dimensions of DJI drone
+drone_kg = 0.895
+drone = chrono.ChBodyEasyBox(drone_x, drone_y, drone_z, drone_kg / drone_x / drone_y / drone_z)
 drone.SetMass(0.895)
 drone.SetPos(chrono.ChVectorD(0, 1, 0))
 drone.GetCollisionModel().AddBox(material, drone_x / 2.0, drone_y / 2.0, drone_z / 2.0)
@@ -74,7 +75,7 @@ vis.SetWindowTitle('Paths demo')
 vis.Initialize()
 vis.AddLogo(chrono.GetChronoDataFile('logo_pychrono_alpha.png'))
 vis.AddSkyBox()
-vis.AddCamera(chrono.ChVectorD(1, 4, 5), chrono.ChVectorD(0, 2, 0))
+camera_id = vis.AddCamera(chrono.ChVectorD(-5, 2, 0), chrono.ChVectorD(0, 2, 0))
 vis.AddTypicalLights()
 
 # ---------------------------------------------------------------------
@@ -102,20 +103,27 @@ listener = keyboard.Listener(
     on_release=on_release)
 listener.start()
 
-while vis.Run():
+propellers = (chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0), chrono.ChVectorD(drone_x / 2.0, 0, drone_z / 2.0),
+              chrono.ChVectorD(-drone_x / 2.0, 0, drone_z / 2.0), chrono.ChVectorD(-drone_x / 2.0, 0, -drone_z / 2.0))
 
-    if keys[keyboard.Key.space]:
-        force = chrono.ChVectorD(0, 10, 0)  # Example force in the negative z-direction
-        point = chrono.ChVectorD(0, 0, 0)  # Example force in the negative z-direction
-        local = True
-        # Apply the force to the center of mass of the drone
-        drone.Empty_forces_accumulators()
-        drone.Accumulate_force(force, point, local)
-    else:
-        drone.Empty_forces_accumulators()
+while vis.Run():
 
     vis.BeginScene()
     vis.Render()
     vis.EnableCollisionShapeDrawing(True)
     vis.EndScene()
     sys.DoStepDynamics(5e-3)
+
+    # vis.SetCameraTarget(drone.GetPos())
+
+    if keys[keyboard.Key.space]:
+        drone.Empty_forces_accumulators()
+        force = chrono.ChVectorD(0, 10, 0)  # Example force in the negative z-direction
+        # point = chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0)  # Example force in the negative z-direction
+        local = True
+
+        for prop in propellers:
+            # Apply the force to the center of mass of the drone
+            drone.Accumulate_force(force, prop, local)
+    else:
+        drone.Empty_forces_accumulators()
