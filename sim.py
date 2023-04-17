@@ -65,7 +65,6 @@ class DroneSimulation:
         #  Create an Irrlicht application to visualize the sys
         #
 
-
         self.vis = chronoirr.ChVisualSystemIrrlicht()
         self.vis.AttachSystem(self.sys)
         self.vis.SetWindowSize(1024, 768)
@@ -85,10 +84,10 @@ class DroneSimulation:
         material.SetCompliance(0)
         material.SetRestitution(0.2)
 
-        mfloor = chrono.ChBodyEasyBox(20, 0.2, 20, 1000)
+        mfloor = chrono.ChBodyEasyBox(50, 0.2, 50, 1000)
         mfloor.SetBodyFixed(True)
         mfloor.SetCollide(True)
-        mfloor.GetCollisionModel().AddBox(material, 10, 0.1, 10)
+        mfloor.GetCollisionModel().AddBox(material, 25, 0.1, 25)
         mfloor.GetCollisionModel().BuildModel()
         self.sys.Add(mfloor)
 
@@ -140,7 +139,8 @@ class DroneSimulation:
         if self.vis is not None:
             self.vis.BindAll()
 
-    def SetupPoints(self, points, abrupt_penalty, points_for_target, crash_penalty, standstill_penalty, standstill_timeout):
+    def SetupPoints(self, points, abrupt_penalty, points_for_target, crash_penalty, standstill_penalty,
+                    standstill_timeout, min_distance_for_penalty, max_distance_for_penalty, distance_penalty):
         self.abrupt_penalty = abrupt_penalty
         self.points = points
         self.points_for_target = points_for_target
@@ -151,6 +151,9 @@ class DroneSimulation:
         self.standstill_timeout = standstill_timeout
         self.standstill_timer = 0.0
         self.last_target_hit_counter = 0
+        self.min_distance_for_penalty = min_distance_for_penalty * min_distance_for_penalty
+        self.max_distance_for_penalty = max_distance_for_penalty * max_distance_for_penalty
+        self.distance_penalty = distance_penalty
 
     def __init__(self):
 
@@ -286,11 +289,15 @@ class DroneSimulation:
                 self.path = self.path[1:]
                 self.target_hit += 1
 
+            if distance > self.min_distance_for_penalty:
+                print("Distance penalty!", self.distance_penalty / self.max_distance_for_penalty * distance)
+                distance = min(self.max_distance_for_penalty, distance)
+                self.points -= self.distance_penalty / self.max_distance_for_penalty * distance
+
         collision_force_thresh = 500 * 500
 
         if self.drone.GetContactForce().Length2() >= collision_force_thresh:
             self.points -= self.crash_penalty
-
 
         self.standstill_timer += step
         if self.standstill_timer > self.standstill_timeout and self.last_target_hit_counter == self.target_hit:
@@ -404,88 +411,24 @@ def DroneManualInput(sim):
 
 
 paths = [
-
     [
         chrono.ChVectorD(0, 0, 0),
         chrono.ChVectorD(0, 2.0, 0),
         chrono.ChVectorD(0, 4.0, 0.0),
-        chrono.ChVectorD(0, 6.0, 0.0),
-        chrono.ChVectorD(0, 8.0, 0.0),
-        chrono.ChVectorD(0, 10.0, 0.0),
-        chrono.ChVectorD(0.5, 12.0, 0.0),
-        chrono.ChVectorD(2.0, 14.0, 0.0),
-        chrono.ChVectorD(4.0, 16.0, 0.0),
-        chrono.ChVectorD(6.0, 16.0, 0.0),
-        chrono.ChVectorD(8.0, 16.0, 0.0),
-    ],
-
-    [
-        chrono.ChVectorD(0, 0, 0),
-        chrono.ChVectorD(0, 2.0, 0),
-        chrono.ChVectorD(1.0, 2.0, 0.0),
-        chrono.ChVectorD(0, 4.0, 3.0),
-        chrono.ChVectorD(3.0, 6.0, 1.0),
-        chrono.ChVectorD(0, 8.0, 0.0),
-        chrono.ChVectorD(0.5, 10.0, 0.0),
-        chrono.ChVectorD(2.0, 12.0, 0.0),
-        chrono.ChVectorD(4.0, 14.0, 0.0),
-        chrono.ChVectorD(6.0, 16.0, 3.0),
-        chrono.ChVectorD(8.0, 16.0, 4.0),
-    ],
-
-    [
-        chrono.ChVectorD(0, 0, 0),
-        chrono.ChVectorD(2.0, 2.0, 0),
-        chrono.ChVectorD(4.0, 4.0, 0.0),
-        chrono.ChVectorD(6.0, 6.0, 0.0),
-        chrono.ChVectorD(8.0, 8.0, 0.0),
-        chrono.ChVectorD(10.0, 10.0, 0.0),
-        chrono.ChVectorD(12.0, 12.0, 0.5),
-        chrono.ChVectorD(10.0, 14.0, 2.0),
-        chrono.ChVectorD(8.0, 16.0, 4.0),
-        chrono.ChVectorD(6.0, 16.0, 6.0),
-        chrono.ChVectorD(2.0, 16.0, 8.0),
-    ],
-
-    [
-        chrono.ChVectorD(0, 0, 0),
-        chrono.ChVectorD(0, 2.0, 1),
-        chrono.ChVectorD(0, 4.0, 4),
-        chrono.ChVectorD(2, 6.0, 5),
-        chrono.ChVectorD(0, 8.0, 2),
-        chrono.ChVectorD(0, 10.0, 3),
-        chrono.ChVectorD(4, 12.0, 7),
-        chrono.ChVectorD(0.0, 14.0, 3),
-        chrono.ChVectorD(0.0, 16.0, 9),
-    ],
-
-    [
-        chrono.ChVectorD(0, 0, 0),
-        chrono.ChVectorD(0, 2.0, 0),
-        chrono.ChVectorD(0, 4.0, 0.0),
-        chrono.ChVectorD(0, 6.0, 0.0),
-        chrono.ChVectorD(0, 8.0, 0.0),
-        chrono.ChVectorD(0, 10.0, 0.0),
-        chrono.ChVectorD(1, 10.0, 1),
-        chrono.ChVectorD(2, 10.0, 2),
-        chrono.ChVectorD(3, 10.0, 3),
-        chrono.ChVectorD(4, 10.0, 4),
-        chrono.ChVectorD(5, 10.0, 5),
-        chrono.ChVectorD(6, 10.0, 6),
-    ],
-
-    [
-        chrono.ChVectorD(0, 0, 0),
-        chrono.ChVectorD(1, 2.0, 0),
-        chrono.ChVectorD(1, 4.0, 1.0),
-        chrono.ChVectorD(1, 6.0, 2.0),
-        chrono.ChVectorD(1, 8.0, 3.0),
-        chrono.ChVectorD(1, 10.0, 3.0),
-        chrono.ChVectorD(1, 12.0, 3.5),
-        chrono.ChVectorD(1.0, 14.0, 3.0),
-        chrono.ChVectorD(1.0, 16.0, 3.0),
-    ],
-
+        chrono.ChVectorD(0.5, 5.0, 0.5),
+        chrono.ChVectorD(0.5, 6.0, 0.5),
+        chrono.ChVectorD(1, 8.0, 1),
+        chrono.ChVectorD(2, 8.0, 1),
+        chrono.ChVectorD(3, 8.0, 2),
+        chrono.ChVectorD(5, 9.0, 2),
+        chrono.ChVectorD(7, 9.0, -2),
+        chrono.ChVectorD(7, 9.0, 0),
+        chrono.ChVectorD(10, 10.0, 0),
+        chrono.ChVectorD(10, 9.0, 5),
+        chrono.ChVectorD(10, 6.0, 5),
+        chrono.ChVectorD(10, 3.0, 5),
+        chrono.ChVectorD(10, 0.0, 8),
+    ]
 ]
 
 if __name__ == '__main__':
@@ -502,9 +445,11 @@ if __name__ == '__main__':
 
     simulation.SetupWorld(random.choice(paths))
 
-    simulation.SetupPoints(35, 0.1, 15, 100, 10, 5.0)
+    simulation.SetupPoints(35, 0.1, 15, 100, 10, 5.0, 2, 10, 1)
 
     last = time.time()
+
+    last_points = 0
 
     while simulation.window_open():
 
@@ -522,9 +467,13 @@ if __name__ == '__main__':
 
         simulation.fitness_update(elapsed_time)
 
+        if last_points != simulation.points:
+            print(simulation.points)
+            last_points = simulation.points
+
         if keys['t']:
             simulation.clear()
 
             simulation.SetupWorld(random.choice(paths))
 
-            simulation.SetupPoints(35, 0.1, 15, 100, 10, 5.0)
+            simulation.SetupPoints(35, 0.1, 15, 100, 10, 5.0, 2, 10, 1)
