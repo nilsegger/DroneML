@@ -15,7 +15,8 @@ import pychrono.core as chrono
 import pychrono.irrlicht as chronoirr
 from pynput import keyboard
 import math
-
+import numpy as np
+import random
 
 # ---------------------------------------------------------------------
 #
@@ -56,17 +57,26 @@ class DroneSimulation:
         (-forward - right - up).GetNormalized(),
     ]
 
-    def __init__(self, path_points):
+    def __init__(self, points, abrupt_penalty, points_for_target, crash_penalty, path_points):
+
+        self.path = path_points[1:]
+        # self.smooth_points = smooth_points
+        self.abrupt_penalty = abrupt_penalty
+        self.points = points
+        self.points_for_target = points_for_target
+        self.crash_penalty = crash_penalty
+        self.timer = 0
+
         self.sys = chrono.ChSystemNSC()
 
         material = chrono.ChMaterialSurfaceNSC()
         material.SetFriction(0.3)
         material.SetCompliance(0)
 
-        mfloor = chrono.ChBodyEasyBox(3, 0.2, 3, 1000)
+        mfloor = chrono.ChBodyEasyBox(20, 0.2, 20, 1000)
         mfloor.SetBodyFixed(True)
         mfloor.SetCollide(True)
-        mfloor.GetCollisionModel().AddBox(material, 1.5, 0.1, 1.5)
+        mfloor.GetCollisionModel().AddBox(material, 10, 0.1, 10)
         mfloor.GetCollisionModel().BuildModel()
         self.sys.Add(mfloor)
 
@@ -75,7 +85,7 @@ class DroneSimulation:
         self.drone = chrono.ChBodyEasyBox(self.drone_x, self.drone_y, self.drone_z,
                                           self.drone_kg / self.drone_x / self.drone_y / self.drone_z)
         self.drone.SetMass(0.895)
-        self.drone.SetPos(chrono.ChVectorD(0, 1, 0))
+        self.drone.SetPos(chrono.ChVectorD(0, self.drone_y + 0.05, 0))
         self.drone.GetCollisionModel().AddBox(material, self.drone_x / 2.0, self.drone_y / 2.0, self.drone_z / 2.0)
         self.drone.SetCollide(True)
 
@@ -128,7 +138,7 @@ class DroneSimulation:
         self.vis.Initialize()
         self.vis.AddLogo(chrono.GetChronoDataFile('logo_pychrono_alpha.png'))
         self.vis.AddSkyBox()
-        camera_id = self.vis.AddCamera(chrono.ChVectorD(-5, 2, 0), chrono.ChVectorD(0, 2, 0))
+        camera_id = self.vis.AddCamera(chrono.ChVectorD(-20, 5, 0), chrono.ChVectorD(0, 2, 0))
         self.vis.AddTypicalLights()
 
         self.max_force = chrono.ChVectorD(0.0, 10.0, 0.0)  # Example force in the negative z-direction
@@ -175,6 +185,9 @@ class DroneSimulation:
 
         return results
 
+    def DronePosition(self):
+        return [self.drone.GetPos().x, self.drone.GetPos().y, self.drone.GetPos().z]
+
     def DroneRotation(self):
         return [self.drone.GetRot().e0, self.drone.GetRot().e1, self.drone.GetRot().e2, self.drone.GetRot().e3]
 
@@ -215,9 +228,44 @@ class DroneSimulation:
 
         self.sys.DoStepDynamics(TimeStep)
 
+        self.timer += TimeStep
+
+    def fitness_update(self):
+
+        # Smoothness
+        thresh = 3
+        current_rotation_dt = self.drone.GetRot_dt()
+
+        rot_sum = abs(current_rotation_dt.e0) + abs(current_rotation_dt.e1) + abs(current_rotation_dt.e2) + abs(
+            current_rotation_dt.e3)
+
+        if rot_sum >= thresh:
+            self.points -= self.abrupt_penalty
+
+        target_thresh = 1.0
+
+        if len(self.path) > 0:
+            next_target = self.path[0]
+            distance = (next_target - self.drone.GetPos()).Length2()
+            if distance < target_thresh:
+                self.points += self.points_for_target
+                self.path = self.path[1:]
+
+        collision_force_thresh = 500 * 500
+
+        if self.drone.GetContactForce().Length2() >= collision_force_thresh:
+            self.points -= self.crash_penalty
+
+    def fitness_final(self):
+        # distance to target
+        # speed
+        # Crash
+        pass
+
     def close(self):
-        simulation.vis.GetDevice().closeDevice()
-        simulation.vis.GetDevice().drop()
+        self.sys.Clear()
+        # self.vis.GetDevice().closeDevice()
+        # self.vis.GetDevice().drop()
 
 
 # ---------------------------------------------------------------------
@@ -311,7 +359,93 @@ def DroneManualInput(sim):
         sim.propellers[3].force = 0.0
 
 
+paths = [
+
+    [
+        chrono.ChVectorD(0, 0, 0),
+        chrono.ChVectorD(0, 2.0, 0),
+        chrono.ChVectorD(0, 4.0, 0.0),
+        chrono.ChVectorD(0, 6.0, 0.0),
+        chrono.ChVectorD(0, 8.0, 0.0),
+        chrono.ChVectorD(0, 10.0, 0.0),
+        chrono.ChVectorD(0.5, 12.0, 0.0),
+        chrono.ChVectorD(2.0, 14.0, 0.0),
+        chrono.ChVectorD(4.0, 16.0, 0.0),
+        chrono.ChVectorD(6.0, 16.0, 0.0),
+        chrono.ChVectorD(8.0, 16.0, 0.0),
+    ],
+
+    [
+        chrono.ChVectorD(0, 0, 0),
+        chrono.ChVectorD(0, 2.0, 0),
+        chrono.ChVectorD(1.0, 2.0, 0.0),
+        chrono.ChVectorD(0, 4.0, 3.0),
+        chrono.ChVectorD(3.0, 6.0, 1.0),
+        chrono.ChVectorD(0, 8.0, 0.0),
+        chrono.ChVectorD(0.5, 10.0, 0.0),
+        chrono.ChVectorD(2.0, 12.0, 0.0),
+        chrono.ChVectorD(4.0, 14.0, 0.0),
+        chrono.ChVectorD(6.0, 16.0, 3.0),
+        chrono.ChVectorD(8.0, 16.0, 4.0),
+    ],
+
+    [
+        chrono.ChVectorD(0, 0, 0),
+        chrono.ChVectorD(2.0, 2.0, 0),
+        chrono.ChVectorD(4.0, 4.0, 0.0),
+        chrono.ChVectorD(6.0, 6.0, 0.0),
+        chrono.ChVectorD(8.0, 8.0, 0.0),
+        chrono.ChVectorD(10.0, 10.0, 0.0),
+        chrono.ChVectorD(12.0, 12.0, 0.5),
+        chrono.ChVectorD(10.0, 14.0, 2.0),
+        chrono.ChVectorD(8.0, 16.0, 4.0),
+        chrono.ChVectorD(6.0, 16.0, 6.0),
+        chrono.ChVectorD(2.0, 16.0, 8.0),
+    ],
+
+    [
+        chrono.ChVectorD(0, 0, 0),
+        chrono.ChVectorD(0, 2.0, 1),
+        chrono.ChVectorD(0, 4.0, 4),
+        chrono.ChVectorD(2, 6.0, 5),
+        chrono.ChVectorD(0, 8.0, 2),
+        chrono.ChVectorD(0, 10.0, 3),
+        chrono.ChVectorD(4, 12.0, 7),
+        chrono.ChVectorD(0.0, 14.0, 3),
+        chrono.ChVectorD(0.0, 16.0, 9),
+    ],
+
+    [
+        chrono.ChVectorD(0, 0, 0),
+        chrono.ChVectorD(0, 2.0, 0),
+        chrono.ChVectorD(0, 4.0, 0.0),
+        chrono.ChVectorD(0, 6.0, 0.0),
+        chrono.ChVectorD(0, 8.0, 0.0),
+        chrono.ChVectorD(0, 10.0, 0.0),
+        chrono.ChVectorD(1, 10.0, 1),
+        chrono.ChVectorD(2, 10.0, 2),
+        chrono.ChVectorD(3, 10.0, 3),
+        chrono.ChVectorD(4, 10.0, 4),
+        chrono.ChVectorD(5, 10.0, 5),
+        chrono.ChVectorD(6, 10.0, 6),
+    ],
+
+    [
+        chrono.ChVectorD(0, 0, 0),
+        chrono.ChVectorD(1, 2.0, 0),
+        chrono.ChVectorD(1, 4.0, 1.0),
+        chrono.ChVectorD(1, 6.0, 2.0),
+        chrono.ChVectorD(1, 8.0, 3.0),
+        chrono.ChVectorD(1, 10.0, 3.0),
+        chrono.ChVectorD(1, 12.0, 3.5),
+        chrono.ChVectorD(1.0, 14.0, 3.0),
+        chrono.ChVectorD(1.0, 16.0, 3.0),
+    ],
+
+]
+
 if __name__ == '__main__':
+
 
     listener = keyboard.Listener(
         on_press=on_press,
@@ -319,16 +453,24 @@ if __name__ == '__main__':
 
     listener.start()
 
-    simulation = DroneSimulation(
-        [chrono.ChVectorD(0, 0, 0), chrono.ChVectorD(0, 5.0, 0), chrono.ChVectorD(5, 12.0, 6)])
 
-    while simulation.window_open():
-        simulation.Update()
-        DroneManualInput(simulation)
-        simulation.DroneSensors()
-        simulation.Render()
+    while True:
 
-        if keys['t']:
-            break
+        simulation = DroneSimulation(35, 0.1, 15, 100,
+                                        random.choice(paths)
+                                     )
 
-    simulation.close()
+        while simulation.window_open():
+            simulation.Update()
+            DroneManualInput(simulation)
+            simulation.DroneSensors()
+            simulation.Render()
+
+            simulation.fitness_update()
+            # print(simulation.drone.GetRotAxis().x, simulation.drone.GetRotAxis().y, simulation.drone.GetRotAxis().z)
+            # print(simulation.drone.GetRot_dt())
+
+            if keys['t']:
+                break
+
+        simulation.close()
