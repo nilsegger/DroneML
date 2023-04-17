@@ -17,6 +17,7 @@ from pynput import keyboard
 import math
 import numpy as np
 import random
+import time
 
 
 # ---------------------------------------------------------------------
@@ -81,8 +82,9 @@ class DroneSimulation:
         self.path = path[1:]
 
         material = chrono.ChMaterialSurfaceNSC()
-        material.SetFriction(0.3)
+        material.SetFriction(0.7)
         material.SetCompliance(0)
+        material.SetRestitution(0.2)
 
         mfloor = chrono.ChBodyEasyBox(20, 0.2, 20, 1000)
         mfloor.SetBodyFixed(True)
@@ -157,7 +159,7 @@ class DroneSimulation:
         self.crash_penalty = None
         self.timer = 0
 
-        self.max_force = chrono.ChVectorD(0.0, 10.0, 0.0)  # Example force in the negative z-direction
+        self.max_force = chrono.ChVectorD(0.0, 4.5, 0.0)  # Example force in the negative z-direction
 
         self.drone_x, self.drone_y, self.drone_z = (0.3475, 0.1077, 0.283)  # dimensions of DJI drone
         self.drone_kg = 0.895
@@ -224,7 +226,7 @@ class DroneSimulation:
 
         yaw = (self.propellers[1].force + self.propellers[3].force) - (
                 self.propellers[0].force + self.propellers[2].force)
-        yaw_multiplier = 10.0
+        yaw_multiplier = 1.0
 
         current_rotation = self.drone.GetRot()
 
@@ -323,7 +325,7 @@ def on_release(key):
 
 
 def DroneManualInput(sim):
-    hover_force_mult = 0.8  # Example force in the negative z-direction
+    hover_force_mult = 0.95  # Example force in the negative z-direction
 
     if keys[keyboard.Key.space]:
         # point = chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0)  # Example force in the negative z-direction
@@ -480,8 +482,19 @@ if __name__ == '__main__':
 
     simulation.SetupPoints(35, 0.1, 15, 100)
 
+    last = time.time()
+
     while simulation.window_open():
-        simulation.Update()
+
+        end_time = time.time()
+
+        # Calculate elapsed time
+        elapsed_time = end_time - last
+
+        simulation.Update(elapsed_time)
+
+        last = time.time()
+
         DroneManualInput(simulation)
         simulation.DroneSensors()
         simulation.Render()
