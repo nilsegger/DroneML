@@ -56,7 +56,7 @@ class DroneSimulation:
         (-forward - right - up).GetNormalized(),
     ]
 
-    def __init__(self):
+    def __init__(self, path_points):
         self.sys = chrono.ChSystemNSC()
 
         material = chrono.ChMaterialSurfaceNSC()
@@ -101,6 +101,20 @@ class DroneSimulation:
             mpathasset.SetColor(chrono.ChColor(1, 1, 1))
             self.mray.AddVisualShape(mpathasset)
             self.drone_ray_shapes.append(mpathasset)
+
+        drone_line_path = chrono.ChLinePath()
+
+        for i in range(len(path_points) - 1):
+            seg = chrono.ChLineSegment(path_points[i], path_points[i + 1])
+            drone_line_path.AddSubLine(seg)
+
+        drone_line_path.Set_closed(False)
+
+        drone_path_shape = chrono.ChLineShape()
+        drone_path_shape.SetLineGeometry(drone_line_path)
+        drone_path_shape.SetColor(chrono.ChColor(0, 0, 1))
+
+        mfloor.AddVisualShape(drone_path_shape)
 
         # ---------------------------------------------------------------------
         #
@@ -153,12 +167,13 @@ class DroneSimulation:
                 # print(ray_result.abs_hitPoint)
                 self.drone_ray_shapes[i].SetLineGeometry(self.CreateLine(start_point, ray_result.abs_hitPoint))
                 self.drone_ray_shapes[i].SetColor(chrono.ChColor(1, 0, 0))
-
                 results.append((ray_result.abs_hitPoint - start_point).Length2())
             else:
                 self.drone_ray_shapes[i].SetLineGeometry(self.CreateLine(start_point, end_point))
                 self.drone_ray_shapes[i].SetColor(chrono.ChColor(1, 1, 1))
                 results.append(ray_length * ray_length)
+
+        return results
 
     def DroneRotation(self):
         return [self.drone.GetRot().e0, self.drone.GetRot().e1, self.drone.GetRot().e2, self.drone.GetRot().e3]
@@ -200,6 +215,10 @@ class DroneSimulation:
 
         self.sys.DoStepDynamics(TimeStep)
 
+    def close(self):
+        simulation.vis.GetDevice().closeDevice()
+        simulation.vis.GetDevice().drop()
+
 
 # ---------------------------------------------------------------------
 #
@@ -213,7 +232,8 @@ keys = {
     'a': False,
     'd': False,
     'q': False,
-    'e': False
+    'e': False,
+    't': False
 }
 
 
@@ -232,8 +252,6 @@ def on_release(key):
         keys[key.char] = False
     except AttributeError:
         keys[key] = False
-
-
 
 
 def DroneManualInput(sim):
@@ -301,11 +319,16 @@ if __name__ == '__main__':
 
     listener.start()
 
-    simulation = DroneSimulation()
+    simulation = DroneSimulation(
+        [chrono.ChVectorD(0, 0, 0), chrono.ChVectorD(0, 5.0, 0), chrono.ChVectorD(5, 12.0, 6)])
 
     while simulation.window_open():
         simulation.Update()
         DroneManualInput(simulation)
         simulation.DroneSensors()
-        print(simulation.DroneRotation())
         simulation.Render()
+
+        if keys['t']:
+            break
+
+    simulation.close()
