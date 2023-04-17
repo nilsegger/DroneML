@@ -18,6 +18,7 @@ import math
 import numpy as np
 import random
 
+
 # ---------------------------------------------------------------------
 #
 #  Create the simulation sys and add items
@@ -57,17 +58,27 @@ class DroneSimulation:
         (-forward - right - up).GetNormalized(),
     ]
 
-    def __init__(self, points, abrupt_penalty, points_for_target, crash_penalty, path_points):
-
-        self.path = path_points[1:]
-        # self.smooth_points = smooth_points
-        self.abrupt_penalty = abrupt_penalty
-        self.points = points
-        self.points_for_target = points_for_target
-        self.crash_penalty = crash_penalty
-        self.timer = 0
+    def SetupIrrlicht(self):
+        # ---------------------------------------------------------------------
+        #
+        #  Create an Irrlicht application to visualize the sys
+        #
 
         self.sys = chrono.ChSystemNSC()
+
+        self.vis = chronoirr.ChVisualSystemIrrlicht()
+        self.vis.AttachSystem(self.sys)
+        self.vis.SetWindowSize(1024, 768)
+        self.vis.SetWindowTitle('DroneML')
+        self.vis.Initialize()
+        self.vis.AddLogo(chrono.GetChronoDataFile('logo_pychrono_alpha.png'))
+        self.vis.AddSkyBox()
+        camera_id = self.vis.AddCamera(chrono.ChVectorD(-20, 5, 0), chrono.ChVectorD(0, 2, 0))
+        self.vis.AddTypicalLights()
+
+    def SetupWorld(self, path):
+
+        self.path = path[1:]
 
         material = chrono.ChMaterialSurfaceNSC()
         material.SetFriction(0.3)
@@ -80,10 +91,9 @@ class DroneSimulation:
         mfloor.GetCollisionModel().BuildModel()
         self.sys.Add(mfloor)
 
-        self.drone_x, self.drone_y, self.drone_z = (0.3475, 0.1077, 0.283)  # dimensions of DJI drone
-        self.drone_kg = 0.895
         self.drone = chrono.ChBodyEasyBox(self.drone_x, self.drone_y, self.drone_z,
                                           self.drone_kg / self.drone_x / self.drone_y / self.drone_z)
+
         self.drone.SetMass(0.895)
         self.drone.SetPos(chrono.ChVectorD(0, self.drone_y + 0.05, 0))
         self.drone.GetCollisionModel().AddBox(material, self.drone_x / 2.0, self.drone_y / 2.0, self.drone_z / 2.0)
@@ -94,9 +104,9 @@ class DroneSimulation:
 
         self.sys.Add(self.drone)
 
-        self.mray = chrono.ChBodyEasyBox(0, 0.0, 0, 0)
-        self.mray.SetBodyFixed(True)
-        self.sys.Add(self.mray)
+        mray = chrono.ChBodyEasyBox(0, 0.0, 0, 0)
+        mray.SetBodyFixed(True)
+        self.sys.Add(mray)
 
         for i in range(18):
             # mpath = chrono.ChLinePath()
@@ -109,13 +119,13 @@ class DroneSimulation:
             mpathasset = chrono.ChLineShape()
             # mpathasset.SetLineGeometry(mpath)
             mpathasset.SetColor(chrono.ChColor(1, 1, 1))
-            self.mray.AddVisualShape(mpathasset)
+            mray.AddVisualShape(mpathasset)
             self.drone_ray_shapes.append(mpathasset)
 
         drone_line_path = chrono.ChLinePath()
 
-        for i in range(len(path_points) - 1):
-            seg = chrono.ChLineSegment(path_points[i], path_points[i + 1])
+        for i in range(len(path) - 1):
+            seg = chrono.ChLineSegment(path[i], path[i + 1])
             drone_line_path.AddSubLine(seg)
 
         drone_line_path.Set_closed(False)
@@ -126,22 +136,32 @@ class DroneSimulation:
 
         mfloor.AddVisualShape(drone_path_shape)
 
-        # ---------------------------------------------------------------------
-        #
-        #  Create an Irrlicht application to visualize the sys
-        #
+        self.vis.BindAll()
 
-        self.vis = chronoirr.ChVisualSystemIrrlicht()
-        self.vis.AttachSystem(self.sys)
-        self.vis.SetWindowSize(1024, 768)
-        self.vis.SetWindowTitle('DroneML')
-        self.vis.Initialize()
-        self.vis.AddLogo(chrono.GetChronoDataFile('logo_pychrono_alpha.png'))
-        self.vis.AddSkyBox()
-        camera_id = self.vis.AddCamera(chrono.ChVectorD(-20, 5, 0), chrono.ChVectorD(0, 2, 0))
-        self.vis.AddTypicalLights()
+    def SetupPoints(self, points, abrupt_penalty, points_for_target, crash_penalty):
+        self.abrupt_penalty = abrupt_penalty
+        self.points = points
+        self.points_for_target = points_for_target
+        self.crash_penalty = crash_penalty
+        self.timer = 0
+
+    def __init__(self, ):
+
+        self.sys = None
+        self.vis = None
+
+        self.path = None
+        self.abrupt_penalty = None
+        self.points = None
+        self.points_for_target = None
+        self.crash_penalty = None
+        self.timer = 0
 
         self.max_force = chrono.ChVectorD(0.0, 10.0, 0.0)  # Example force in the negative z-direction
+
+        self.drone_x, self.drone_y, self.drone_z = (0.3475, 0.1077, 0.283)  # dimensions of DJI drone
+        self.drone_kg = 0.895
+        self.drone = None
 
         self.propellers = (
             Propeller(chrono.ChVectorD(self.drone_x / 2.0, 0, -self.drone_z / 2.0)),
@@ -262,10 +282,10 @@ class DroneSimulation:
         # Crash
         pass
 
-    def close(self):
+    def clear(self):
         self.sys.Clear()
-        # self.vis.GetDevice().closeDevice()
-        # self.vis.GetDevice().drop()
+
+        self.drone_ray_shapes.clear()
 
 
 # ---------------------------------------------------------------------
@@ -446,31 +466,31 @@ paths = [
 
 if __name__ == '__main__':
 
-
     listener = keyboard.Listener(
         on_press=on_press,
         on_release=on_release)
 
     listener.start()
 
+    simulation = DroneSimulation()
 
-    while True:
+    simulation.SetupIrrlicht()
 
-        simulation = DroneSimulation(35, 0.1, 15, 100,
-                                        random.choice(paths)
-                                     )
+    simulation.SetupWorld(random.choice(paths))
 
-        while simulation.window_open():
-            simulation.Update()
-            DroneManualInput(simulation)
-            simulation.DroneSensors()
-            simulation.Render()
+    simulation.SetupPoints(35, 0.1, 15, 100)
 
-            simulation.fitness_update()
-            # print(simulation.drone.GetRotAxis().x, simulation.drone.GetRotAxis().y, simulation.drone.GetRotAxis().z)
-            # print(simulation.drone.GetRot_dt())
+    while simulation.window_open():
+        simulation.Update()
+        DroneManualInput(simulation)
+        simulation.DroneSensors()
+        simulation.Render()
 
-            if keys['t']:
-                break
+        simulation.fitness_update()
 
-        simulation.close()
+        if keys['t']:
+            simulation.clear()
+
+            simulation.SetupWorld(random.choice(paths))
+
+            simulation.SetupPoints(35, 0.1, 15, 100)
