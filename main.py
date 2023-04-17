@@ -2,10 +2,15 @@ from sim import DroneSimulation, paths
 
 import numpy as np
 import pygad
-from keras import Sequential, Input
-from keras.layers import Dense
+import pygad.gann
+import pygad.nn
+import random
+import time
 
-import pychrono.core as chrono
+from pynput import keyboard
+
+render_only_best = True
+step = 1 / 15
 
 # Define the problem
 input_size = 25  # 3D coordinates of the drone
@@ -34,31 +39,16 @@ def run_simulation(network, solution_idx):
 
     while simulation.timer <= timeout and simulation.points > 0:
 
-        rays = np.array(simulation.DroneSensors())
-        rotation = np.array(simulation.DroneRotation())
+        run_simulation(sol_idx, step)
 
-        predictions = network.predict(rays + rotation + target)
-
-        print(predictions)
-        for i in range(4):
-            simulation.propellers[i].force = predictions[i]
-
-        simulation.Update()
-
-        simulation.Update(1.0 / 30.0)
-
-        if simulation.window_open():
+        if not render_only_best and simulation.window_open():
             simulation.Render()
 
-        simulation.fitness_update()
-
-    print("points:", simulation.points)
+    # print("points:", simulation.points)
     return simulation.points
 
 
 def callback_generation(ga_instance):
-    print("callback generation?")
-
     global GANN_instance
 
     population_matrices = pygad.gann.population_as_matrices(population_networks=GANN_instance.population_networks,

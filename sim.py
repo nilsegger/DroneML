@@ -65,7 +65,6 @@ class DroneSimulation:
         #  Create an Irrlicht application to visualize the sys
         #
 
-        self.sys = chrono.ChSystemNSC()
 
         self.vis = chronoirr.ChVisualSystemIrrlicht()
         self.vis.AttachSystem(self.sys)
@@ -138,18 +137,24 @@ class DroneSimulation:
 
         mfloor.AddVisualShape(drone_path_shape)
 
-        self.vis.BindAll()
+        if self.vis is not None:
+            self.vis.BindAll()
 
-    def SetupPoints(self, points, abrupt_penalty, points_for_target, crash_penalty):
+    def SetupPoints(self, points, abrupt_penalty, points_for_target, crash_penalty, standstill_penalty, standstill_timeout):
         self.abrupt_penalty = abrupt_penalty
         self.points = points
         self.points_for_target = points_for_target
         self.crash_penalty = crash_penalty
         self.timer = 0
+        self.target_hit = 0
+        self.standstill_penalty = standstill_penalty
+        self.standstill_timeout = standstill_timeout
+        self.standstill_timer = 0.0
+        self.last_target_hit_counter = 0
 
-    def __init__(self, ):
+    def __init__(self):
 
-        self.sys = None
+        self.sys = chrono.ChSystemNSC()
         self.vis = None
 
         self.path = None
@@ -158,6 +163,9 @@ class DroneSimulation:
         self.points_for_target = None
         self.crash_penalty = None
         self.timer = 0
+        self.target_hit = 0
+        self.standstill_penalty = None
+        self.standstill_timeout = None
 
         self.max_force = chrono.ChVectorD(0.0, 4.5, 0.0)  # Example force in the negative z-direction
 
@@ -207,6 +215,10 @@ class DroneSimulation:
 
         return results
 
+    def NextTarget(self):
+        if len(self.path) > 0:
+            return [self.path[0].x, self.path[0].y, self.path[0].z]
+
     def DronePosition(self):
         return [self.drone.GetPos().x, self.drone.GetPos().y, self.drone.GetPos().z]
 
@@ -252,7 +264,7 @@ class DroneSimulation:
 
         self.timer += TimeStep
 
-    def fitness_update(self):
+    def fitness_update(self, step):
 
         # Smoothness
         thresh = 3
@@ -272,11 +284,21 @@ class DroneSimulation:
             if distance < target_thresh:
                 self.points += self.points_for_target
                 self.path = self.path[1:]
+                self.target_hit += 1
 
         collision_force_thresh = 500 * 500
 
         if self.drone.GetContactForce().Length2() >= collision_force_thresh:
             self.points -= self.crash_penalty
+
+
+        self.standstill_timer += step
+        if self.standstill_timer > self.standstill_timeout and self.last_target_hit_counter == self.target_hit:
+            self.standstill_timer = 0
+            self.points -= self.standstill_penalty
+        elif self.last_target_hit_counter != self.target_hit:
+            self.standstill_timer = 0
+            self.last_target_hit_counter = self.target_hit
 
     def fitness_final(self):
         # distance to target
@@ -480,7 +502,7 @@ if __name__ == '__main__':
 
     simulation.SetupWorld(random.choice(paths))
 
-    simulation.SetupPoints(35, 0.1, 15, 100)
+    simulation.SetupPoints(35, 0.1, 15, 100, 10, 5.0)
 
     last = time.time()
 
@@ -498,11 +520,11 @@ if __name__ == '__main__':
         simulation.DroneSensors()
         simulation.Render()
 
-        simulation.fitness_update()
+        simulation.fitness_update(elapsed_time)
 
         if keys['t']:
             simulation.clear()
 
             simulation.SetupWorld(random.choice(paths))
 
-            simulation.SetupPoints(35, 0.1, 15, 100)
+            simulation.SetupPoints(35, 0.1, 15, 100, 10, 5.0)
