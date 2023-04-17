@@ -1,9 +1,11 @@
-from sim import DroneSimulation
+from sim import DroneSimulation, paths
 
 import numpy as np
 import pygad
 from keras import Sequential, Input
 from keras.layers import Dense
+
+import pychrono.core as chrono
 
 # Define the problem
 input_size = 25  # 3D coordinates of the drone
@@ -30,7 +32,7 @@ def run_simulation(network, solution_idx):
 
     simulation = DroneSimulation()
 
-    while simulation.window_open():
+    while simulation.timer <= timeout and simulation.points > 0:
 
         rays = np.array(simulation.DroneSensors())
         rotation = np.array(simulation.DroneRotation())
@@ -43,10 +45,25 @@ def run_simulation(network, solution_idx):
 
         simulation.Update()
 
-        simulation.Render()
+        simulation.Update(1.0 / 30.0)
 
-    score = 1.0
-    return score
+        if simulation.window_open():
+            simulation.Render()
+
+        simulation.fitness_update()
+
+    print("points:", simulation.points)
+    return simulation.points
+
+
+def callback_generation(ga_instance):
+    print("callback generation?")
+
+    global GANN_instance
+
+    population_matrices = pygad.gann.population_as_matrices(population_networks=GANN_instance.population_networks,
+                                                            population_vectors=ga_instance.population)
+    GANN_instance.update_population_trained_weights(population_trained_weights=population_matrices)
 
 
 def create_network(solution):

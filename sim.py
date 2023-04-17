@@ -490,10 +490,9 @@ if __name__ == '__main__':
 
         # Calculate elapsed time
         elapsed_time = end_time - last
+        last = time.time()
 
         simulation.Update(elapsed_time)
-
-        last = time.time()
 
         DroneManualInput(simulation)
         simulation.DroneSensors()
