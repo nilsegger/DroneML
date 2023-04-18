@@ -122,19 +122,39 @@ class DroneSimulation:
             mray.AddVisualShape(mpathasset)
             self.drone_ray_shapes.append(mpathasset)
 
-        drone_line_path = chrono.ChLinePath()
+        self.drone_line_path = chrono.ChLinePath()
 
         for i in range(len(path) - 1):
             seg = chrono.ChLineSegment(path[i], path[i + 1])
-            drone_line_path.AddSubLine(seg)
+            self.drone_line_path.AddSubLine(seg)
 
-        drone_line_path.Set_closed(False)
+        self.drone_line_path.Set_closed(False)
 
         drone_path_shape = chrono.ChLineShape()
-        drone_path_shape.SetLineGeometry(drone_line_path)
+        drone_path_shape.SetLineGeometry(self.drone_line_path)
         drone_path_shape.SetColor(chrono.ChColor(0, 0, 1))
 
         mfloor.AddVisualShape(drone_path_shape)
+
+        self.closest_point_on_path_visual = chrono.ChBodyEasySphere(0.2, 100)
+        self.closest_point_on_path_visual.SetPos(chrono.ChVectorD(0, 0, 0))
+        self.closest_point_on_path_visual.SetBodyFixed(True)
+        self.closest_point_on_path_visual.GetVisualShape(0).SetColor(chrono.ChColor(0, 0, 1))
+
+        self.sys.Add(self.closest_point_on_path_visual)
+
+        capsule = chrono.ChSphereShape()
+        capsule.SetColor(chrono.ChColor(0, 1, 0))
+
+        self.next_target_visual = chrono.ChBodyEasySphere(0.2, 100)
+
+        if len(self.path) > 0:
+            self.next_target_visual.SetPos(self.path[0])
+
+        self.next_target_visual.SetBodyFixed(True)
+        self.next_target_visual.AddVisualShape(capsule)
+        self.next_target_visual.GetVisualShape(0).SetColor(chrono.ChColor(0, 1, 0))
+        self.sys.Add(self.next_target_visual)
 
         if self.vis is not None:
             self.vis.BindAll()
@@ -160,15 +180,20 @@ class DroneSimulation:
         self.sys = chrono.ChSystemNSC()
         self.vis = None
 
-        self.path = None
-        self.abrupt_penalty = None
-        self.points = None
-        self.points_for_target = None
-        self.crash_penalty = None
+        self.path = []
+        self.abrupt_penalty = 0
+        self.points = 0
+        self.points_for_target = 0
+        self.crash_penalty = 0
         self.timer = 0
         self.target_hit = 0
-        self.standstill_penalty = None
-        self.standstill_timeout = None
+        self.standstill_penalty = 0
+        self.standstill_timeout = 0
+        self.standstill_timer = 0.0
+        self.last_target_hit_counter = 0
+        self.min_distance_for_penalty = 1
+        self.max_distance_for_penalty = 1
+        self.distance_penalty = 0
 
         self.max_force = chrono.ChVectorD(0.0, 4.5, 0.0)  # Example force in the negative z-direction
 
@@ -182,6 +207,11 @@ class DroneSimulation:
             Propeller(chrono.ChVectorD(-self.drone_x / 2.0, 0, self.drone_z / 2.0)),
             Propeller(chrono.ChVectorD(-self.drone_x / 2.0, 0, -self.drone_z / 2.0))
         )
+
+        self.drone_line_path = None
+
+        self.closest_point_on_path_visual = None
+        self.next_target_visual = None
 
     def CreateLine(self, start, end):
         mpath = chrono.ChLinePath()
@@ -218,9 +248,40 @@ class DroneSimulation:
 
         return results
 
+    def NextTargetChVectorD(self):
+        if self.drone_line_path.GetSubLinesCount() > self.target_hit:
+            segment = self.drone_line_path.GetSubLineN(self.target_hit)
+
+            line_start = segment.GetEndA()
+            line_end = segment.GetEndB()
+
+            # Calculate the vector from line start to point
+            line_vec = line_end - line_start
+            point_vec = self.drone.GetPos() - line_start
+
+            # Calculate the parameter value 't' where the projection of point_vec onto line_vec is at its maximum
+            t = max(min(point_vec.Dot(line_vec) / line_vec.Length2(), 1), 0)
+
+            # Calculate the closest point on the line segment to the given point
+            closest_point = line_start + line_vec * t
+
+            direction = (line_end - line_start).GetNormalized()
+
+            distance = (line_end - closest_point).Length()
+            offset = 0.1
+
+            if offset > distance:
+                offset = distance
+
+            closest_point = closest_point + (direction * offset)
+
+            return closest_point
+        else:
+            return chrono.ChVectorD(0, 0, 0)
+
     def NextTarget(self):
-        if len(self.path) > 0:
-            return [self.path[0].x, self.path[0].y, self.path[0].z]
+        vec = self.NextTargetChVectorD()
+        return [vec.x, vec.y, vec.z]
 
     def DronePosition(self):
         return [self.drone.GetPos().x, self.drone.GetPos().y, self.drone.GetPos().z]
@@ -238,6 +299,11 @@ class DroneSimulation:
         self.vis.EndScene()
 
     def Update(self, TimeStep=5e-3):
+
+        if len(self.path) > 0:
+            self.next_target_visual.SetPos(self.path[0])
+
+        self.closest_point_on_path_visual.SetPos(self.NextTargetChVectorD())
 
         yaw = (self.propellers[1].force + self.propellers[3].force) - (
                 self.propellers[0].force + self.propellers[2].force)
@@ -279,18 +345,17 @@ class DroneSimulation:
         if rot_sum >= thresh:
             self.points -= self.abrupt_penalty
 
-        target_thresh = 1.0
+        target_thresh = 0.2
 
         if len(self.path) > 0:
             next_target = self.path[0]
             distance = (next_target - self.drone.GetPos()).Length2()
-            if distance < target_thresh:
+            if distance < target_thresh:  # target was hit
                 self.points += self.points_for_target
                 self.path = self.path[1:]
                 self.target_hit += 1
 
             if distance > self.min_distance_for_penalty:
-                print("Distance penalty!", self.distance_penalty / self.max_distance_for_penalty * distance)
                 distance = min(self.max_distance_for_penalty, distance)
                 self.points -= self.distance_penalty / self.max_distance_for_penalty * distance
 
@@ -308,10 +373,17 @@ class DroneSimulation:
             self.last_target_hit_counter = self.target_hit
 
     def fitness_final(self):
-        # distance to target
-        # speed
-        # Crash
-        pass
+        if self.drone_line_path.GetSubLinesCount() > self.target_hit:
+            segment = self.drone_line_path.GetSubLineN(self.target_hit)
+
+            line_start = segment.GetEndA()
+            line_end = segment.GetEndB()
+            line_length = (line_end - line_start).Length()
+
+            distance = (line_end - self.drone.GetPos()).Length()
+
+            if distance < line_length:
+                self.points += self.points_for_target / line_length * (line_length - distance)
 
     def clear(self):
         self.sys.Clear()
@@ -332,7 +404,7 @@ keys = {
     'd': False,
     'q': False,
     'e': False,
-    't': False
+    'r': False
 }
 
 
@@ -411,24 +483,19 @@ def DroneManualInput(sim):
 
 
 paths = [
+
     [
         chrono.ChVectorD(0, 0, 0),
-        chrono.ChVectorD(0, 2.0, 0),
-        chrono.ChVectorD(0, 4.0, 0.0),
-        chrono.ChVectorD(0.5, 5.0, 0.5),
-        chrono.ChVectorD(0.5, 6.0, 0.5),
-        chrono.ChVectorD(1, 8.0, 1),
-        chrono.ChVectorD(2, 8.0, 1),
-        chrono.ChVectorD(3, 8.0, 2),
-        chrono.ChVectorD(5, 9.0, 2),
-        chrono.ChVectorD(7, 9.0, -2),
-        chrono.ChVectorD(7, 9.0, 0),
-        chrono.ChVectorD(10, 10.0, 0),
-        chrono.ChVectorD(10, 9.0, 5),
-        chrono.ChVectorD(10, 6.0, 5),
-        chrono.ChVectorD(10, 3.0, 5),
-        chrono.ChVectorD(10, 0.0, 8),
-    ]
+        chrono.ChVectorD(2, 2, 0),
+        chrono.ChVectorD(2, 4, 2),
+        chrono.ChVectorD(-4, 6, 2),
+        chrono.ChVectorD(-4, 6, 5),
+        chrono.ChVectorD(-4, 8, 5),
+        chrono.ChVectorD(-4, 12, 5),
+        chrono.ChVectorD(0, 12, 0),
+        chrono.ChVectorD(0, 0, 0),
+    ],
+
 ]
 
 if __name__ == '__main__':
@@ -445,7 +512,7 @@ if __name__ == '__main__':
 
     simulation.SetupWorld(random.choice(paths))
 
-    simulation.SetupPoints(35, 0.1, 15, 100, 10, 5.0, 2, 10, 1)
+    simulation.SetupPoints(0, 0.5, 10, 10, 1, 5.0, 4, 10, 0.05)
 
     last = time.time()
 
@@ -471,7 +538,7 @@ if __name__ == '__main__':
             print(simulation.points)
             last_points = simulation.points
 
-        if keys['t']:
+        if keys['r']:
             simulation.clear()
 
             simulation.SetupWorld(random.choice(paths))
