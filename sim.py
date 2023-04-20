@@ -18,6 +18,20 @@ import math
 import random
 import time
 
+
+def make_path_dense(path, mindisthreshold):
+    for i in range(len(path)):
+        numpoints = len(path[i])
+        j = 0
+        while j < numpoints - 1:
+            if (path[i][j] - path[i][j + 1]).Length() > mindisthreshold:
+                path[i].insert(j + 1, (path[i][j] + path[i][j + 1]) / 2)
+                numpoints += 1
+            else:
+                j += 1
+    return path
+
+
 material = chrono.ChMaterialSurfaceNSC()
 material.SetFriction(0.7)
 material.SetCompliance(0)
@@ -253,9 +267,9 @@ class Drone:
 
         if self.path_next < len(self.path):
             next_target = self.path[self.path_next]
-            distance = (next_target - self.body.GetPos()).Length()
+            distance = (next_target - self.body.GetPos()).Length2()
 
-            if distance < target_thresh:  # target was hit
+            if distance < target_thresh * target_thresh:  # target was hit
                 self.points += self.points_config.points_for_target
                 self.path_next += 1
 
@@ -285,14 +299,19 @@ class Drone:
 
 class Simulation:
 
-    def __init__(self, points_config: PointsConfig):
+    def __init__(self, points_config: PointsConfig, update_rays_every_n_frame=3):
 
         self.sys = chrono.ChSystemNSC()
         self.lines_parent = None
         self.drones = []
         self.points_config = points_config
+        self.timer = 0.0
+        self.update_rays_every_n_frame = update_rays_every_n_frame
+        self.ray_update_counter = 0
 
     def setup_world(self, path, n_drones):
+
+        self.timer = 0.0
 
         mfloor = chrono.ChBodyEasyBox(50, 10, 50, 1000)
         mfloor.SetBodyFixed(True)
@@ -326,18 +345,25 @@ class Simulation:
     def update(self, time_step=5e-3):
 
         for drone in self.drones:
-            drone.body.SetCollide(True)
-
-        for drone in self.drones:
             drone.update(time_step)
 
+        self.timer += time_step
         self.sys.DoStepDynamics(time_step)
 
-        for drone in self.drones:
-            drone.body.SetCollide(False)
+        self.ray_update_counter += 1
 
-        for drone in self.drones:
-            drone.update_rays()
+        if self.ray_update_counter == self.update_rays_every_n_frame:
+
+            for drone in self.drones:
+                drone.body.SetCollide(False)
+
+            for drone in self.drones:
+                drone.update_rays()
+
+            for drone in self.drones:
+                drone.body.SetCollide(True)
+
+            self.ray_update_counter = 0
 
     def clear(self):
         self.sys.Clear()
@@ -498,12 +524,17 @@ if __name__ == '__main__':
 
     listener.start()
 
+    make_path_dense(paths, 0.1)
+
     simulation = Simulation(PointsConfig(5, 100, 10, 1, 10.0, 4, 10, 0.05))
-    simulation.setup_world(random.choice(paths), 10)
+    simulation.setup_world(random.choice(paths), 100)
 
     window = SimulationVisual(simulation)
 
     last = time.time()
+
+    frames = 0
+    frames_time = 0
 
     last_points = 0
 
@@ -516,6 +547,8 @@ if __name__ == '__main__':
         elapsed_time = end_time - last
         last = time.time()
 
+        frames += 1
+        frames_time += elapsed_time
         simulation.update(elapsed_time)
 
         drones_char = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
@@ -529,7 +562,12 @@ if __name__ == '__main__':
 
         if last_points != simulation.drones[current_drone].points:
             last_points = simulation.drones[current_drone].points
-            print(last_points)
+            # print(last_points)
+
+        if frames == 100:
+            print("Avg in game elapsed time:", frames_time / 100.0)
+            frames = 0
+            frames_time = 0
 
         if keys['r']:
             simulation.clear()
@@ -537,3 +575,6 @@ if __name__ == '__main__':
             simulation.setup_world(random.choice(paths), 10)
 
             window.bind_from_simulation()
+
+            frames = 0
+            frames_time = 0
