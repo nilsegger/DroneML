@@ -135,11 +135,13 @@ class Drone:
             Propeller(chrono.ChVectorD(-self.l / 2.0, self.h, -self.w / 2.0))
         )
 
-        self.closest_point_on_path_visual = chrono.ChBodyEasySphere(0.2, 100)
-        self.closest_point_on_path_visual.SetPos(chrono.ChVectorD(0, 0, 0))
-        self.closest_point_on_path_visual.SetBodyFixed(True)
-        self.closest_point_on_path_visual.GetVisualShape(0).SetColor(self.color)
-        sys.Add(self.closest_point_on_path_visual)
+        self.closest_point_on_path_visual = None
+        if origin_object is not None:
+            self.closest_point_on_path_visual = chrono.ChBodyEasySphere(0.2, 100)
+            self.closest_point_on_path_visual.SetPos(chrono.ChVectorD(0, 0, 0))
+            self.closest_point_on_path_visual.SetBodyFixed(True)
+            self.closest_point_on_path_visual.GetVisualShape(0).SetColor(self.color)
+            sys.Add(self.closest_point_on_path_visual)
 
         self.path = path
         self.path_next = 1
@@ -149,11 +151,12 @@ class Drone:
 
         self.ray_shapes = []
 
-        for i in range(18):
-            mpathasset = chrono.ChLineShape()
-            mpathasset.SetColor(self.color)
-            origin_object.AddVisualShape(mpathasset)
-            self.ray_shapes.append(mpathasset)
+        if origin_object is not None:
+            for i in range(18):
+                mpathasset = chrono.ChLineShape()
+                mpathasset.SetColor(self.color)
+                origin_object.AddVisualShape(mpathasset)
+                self.ray_shapes.append(mpathasset)
 
     def update(self, time_step):
         yaw = (self.propellers[1].force + self.propellers[3].force) - (
@@ -181,7 +184,9 @@ class Drone:
             self.body.Accumulate_force(self.max_force * prop.force, prop.position, True)
 
         self.target_update()
-        self.closest_point_on_path_visual.SetPos(self.target)
+
+        if self.closest_point_on_path_visual is not None:
+            self.closest_point_on_path_visual.SetPos(self.target)
 
         self.fitness_update(time_step)
 
@@ -241,14 +246,17 @@ class Drone:
 
             # Check if there was a collision
             if ray_result.hit:
-                # print(ray_result.abs_hitPoint)
-                self.ray_shapes[i].SetLineGeometry(self.create_ray_line(start_point, ray_result.abs_hitPoint))
-                self.ray_shapes[i].SetColor(chrono.ChColor(1, 0, 0))
                 self._rays_lengths.append((ray_result.abs_hitPoint - start_point).Length2())
+
+                if len(self.ray_shapes) > 0:
+                    self.ray_shapes[i].SetLineGeometry(self.create_ray_line(start_point, ray_result.abs_hitPoint))
+                    self.ray_shapes[i].SetColor(chrono.ChColor(1, 0, 0))
             else:
-                self.ray_shapes[i].SetLineGeometry(self.create_ray_line(start_point, end_point))
-                self.ray_shapes[i].SetColor(self.color)
                 self._rays_lengths.append(ray_length * ray_length)
+
+                if len(self.ray_shapes) > 0:
+                    self.ray_shapes[i].SetLineGeometry(self.create_ray_line(start_point, end_point))
+                    self.ray_shapes[i].SetColor(self.color)
 
     def fitness_update(self, step):
 
@@ -299,7 +307,7 @@ class Drone:
 
 class Simulation:
 
-    def __init__(self, points_config: PointsConfig, update_rays_every_n_frame=3):
+    def __init__(self, points_config: PointsConfig, update_rays_every_n_frame=1):
 
         self.sys = chrono.ChSystemNSC()
         self.lines_parent = None
@@ -309,7 +317,7 @@ class Simulation:
         self.update_rays_every_n_frame = update_rays_every_n_frame
         self.ray_update_counter = 0
 
-    def setup_world(self, path, n_drones):
+    def setup_world(self, path, n_drones, ignore_visualisation_objects=True):
 
         self.timer = 0.0
 
@@ -321,23 +329,27 @@ class Simulation:
         mfloor.GetCollisionModel().BuildModel()
         self.sys.Add(mfloor)
 
-        self.lines_parent = chrono.ChBodyEasyBox(0, 0, 0, 0)
-        self.lines_parent.SetBodyFixed(True)
-        self.sys.Add(self.lines_parent)
+        self.lines_parent = None
 
-        path_line = chrono.ChLinePath()
+        if not ignore_visualisation_objects:
+            self.lines_parent = chrono.ChBodyEasyBox(0, 0, 0, 0)
+            self.lines_parent.SetBodyFixed(True)
 
-        for i in range(len(path) - 1):
-            seg = chrono.ChLineSegment(path[i], path[i + 1])
-            path_line.AddSubLine(seg)
+            self.sys.Add(self.lines_parent)
 
-        path_line.Set_closed(False)
+            path_line = chrono.ChLinePath()
 
-        path_shape = chrono.ChLineShape()
-        path_shape.SetLineGeometry(path_line)
-        path_shape.SetColor(chrono.ChColor(0, 0, 1))
+            for i in range(len(path) - 1):
+                seg = chrono.ChLineSegment(path[i], path[i + 1])
+                path_line.AddSubLine(seg)
 
-        self.lines_parent.AddVisualShape(path_shape)
+            path_line.Set_closed(False)
+
+            path_shape = chrono.ChLineShape()
+            path_shape.SetLineGeometry(path_line)
+            path_shape.SetColor(chrono.ChColor(0, 0, 1))
+
+            self.lines_parent.AddVisualShape(path_shape)
 
         for i in range(n_drones):
             self.drones.append(Drone(self.sys, self.lines_parent, path, self.points_config))
@@ -526,8 +538,8 @@ if __name__ == '__main__':
 
     make_path_dense(paths, 0.1)
 
-    simulation = Simulation(PointsConfig(5, 100, 10, 1, 10.0, 4, 10, 0.05))
-    simulation.setup_world(random.choice(paths), 100)
+    simulation = Simulation(PointsConfig(5, 100, 10, 1, 10.0, 4, 10, 0.05), update_rays_every_n_frame=2)
+    simulation.setup_world(random.choice(paths), 100, ignore_visualisation_objects=True)
 
     window = SimulationVisual(simulation)
 
@@ -558,21 +570,24 @@ if __name__ == '__main__':
                 current_drone = i
         DroneManualInput(simulation.drones[current_drone])
 
-        window.render()
+        # window.render()
 
         if last_points != simulation.drones[current_drone].points:
             last_points = simulation.drones[current_drone].points
             # print(last_points)
 
         if frames == 100:
-            print("Avg in game elapsed time:", frames_time / 100.0)
+            timeout = 60.0
+            time_step = 1 / 30
+            avg_time_for_one_frame = frames_time / 100.0
+            print(timeout, "seconds of sim would take", timeout / time_step * avg_time_for_one_frame, "avg time for one frame", avg_time_for_one_frame)
             frames = 0
             frames_time = 0
 
         if keys['r']:
             simulation.clear()
 
-            simulation.setup_world(random.choice(paths), 10)
+            simulation.setup_world(random.choice(paths), 100)
 
             window.bind_from_simulation()
 
