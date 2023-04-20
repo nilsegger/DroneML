@@ -538,8 +538,8 @@ if __name__ == '__main__':
 
     make_path_dense(paths, 0.1)
 
-    simulation = Simulation(PointsConfig(5, 100, 10, 1, 10.0, 4, 10, 0.05), update_rays_every_n_frame=2)
-    simulation.setup_world(random.choice(paths), 100, ignore_visualisation_objects=True)
+    simulation = Simulation(PointsConfig(5, 100, 10, 1, 10.0, 4, 10, 0.05), update_rays_every_n_frame=6)
+    simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=True)
 
     window = SimulationVisual(simulation)
 
@@ -570,14 +570,14 @@ if __name__ == '__main__':
                 current_drone = i
         DroneManualInput(simulation.drones[current_drone])
 
-        # window.render()
+        window.render()
 
         if last_points != simulation.drones[current_drone].points:
             last_points = simulation.drones[current_drone].points
             # print(last_points)
 
         if frames == 100:
-            timeout = 60.0
+            timeout = 30.0
             time_step = 1 / 30
             avg_time_for_one_frame = frames_time / 100.0
             print(timeout, "seconds of sim would take", timeout / time_step * avg_time_for_one_frame, "avg time for one frame", avg_time_for_one_frame)
@@ -587,7 +587,7 @@ if __name__ == '__main__':
         if keys['r']:
             simulation.clear()
 
-            simulation.setup_world(random.choice(paths), 100)
+            simulation.setup_world(random.choice(paths), 1, False)
 
             window.bind_from_simulation()
 

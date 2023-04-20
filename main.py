@@ -1,7 +1,7 @@
 import math
 import pickle
 
-from sim import DroneSimulation, paths
+from sim import Simulation, SimulationVisual, paths, make_path_dense, PointsConfig
 
 import numpy as np
 import pygad
@@ -18,14 +18,13 @@ now = datetime.datetime.now()
 formatted_time = now.strftime("%Y-%m-%d_%H-%M-%S")
 filename = "progress_" + formatted_time + ".pkl"
 
-initial_population_file = 'progress_2023-04-18_21-56-04.pkl' # None # 'lucky_drone_fitness_81.pkl' # None # 'test.pkl'
+initial_population_file = None  # 'progress_2023-04-18_22-05-33.pkl' # None # 'lucky_drone_fitness_81.pkl' # None # 'test.pkl'
 
-output_population_file = filename # 'test.pkl'
+output_population_file = filename  # 'test.pkl'
 initial_population_matrices = None
 
 render_only_best = True
 
-step = 1 / 15
 
 num_solutions = 20
 GANN_instance = pygad.gann.GANN(num_solutions=num_solutions,
@@ -44,65 +43,54 @@ if initial_population_file is not None:
     except FileNotFoundError:
         print(initial_population_file, "does not exist, continuing without")
 
+make_path_dense(paths, 0.1)
+
 population_vectors = pygad.gann.population_as_vectors(population_networks=GANN_instance.population_networks)
 
-simulation = DroneSimulation()
+step = 1 / 30
+points_config = PointsConfig(5, 10, 50, 1, 5, 2, 5, 0.01)
+simulation = Simulation(points_config, update_rays_every_n_frame=6)
+visualisation = None
 
 if not render_only_best:
-    simulation.SetupIrrlicht()
+    visualisation = SimulationVisual(simulation)
 
 
-def run_simulation(sol_idx, timestep):
-    data_inputs = np.array([
-        simulation.DronePosition() + simulation.DroneRotation() + simulation.DroneSensors() + simulation.NextTarget()])
+def fitness_func(ga_instance, solution, solution_indices):
 
-    predictions = pygad.nn.predict(last_layer=GANN_instance.population_networks[sol_idx],
-                                   data_inputs=data_inputs,
-                                   problem_type="regression")
-
-    predictions = predictions[0]
-
-    """
-    old_predictions = predictions.copy()
-
-    predictions[0] = max(0, min(predictions[0], 1))
-    predictions[1] = max(0, min(predictions[1], 1))
-    predictions[2] = max(0, min(predictions[2], 1))
-    predictions[3] = max(0, min(predictions[3], 1))
-    """
-
-    simulation.propellers[0].force = predictions[0]
-    simulation.propellers[1].force = predictions[1]
-    simulation.propellers[2].force = predictions[2]
-    simulation.propellers[3].force = predictions[3]
-
-    # print(old_predictions, "->", predictions)
-
-    simulation.Update(timestep)
-
-    simulation.fitness_update(timestep)
-
-
-def fitness_func(ga_instance, solution, sol_idx):
     global GANN_instance
 
     timeout = 10.0
 
     simulation.clear()
-    simulation.SetupWorld(random.choice(paths))
-    simulation.SetupPoints(0, 5, 50, 10, 1, 5.0, 4, 10, 0.05)
+    simulation.setup_world(random.choice(paths), len(solution_indices), ignore_visualisation_objects=True)
+
+    if not render_only_best:
+        visualisation.bind_from_simulation()
 
     while simulation.timer <= timeout:
 
-        run_simulation(sol_idx, step)
+        for i in range(len(solution_indices)):
+            sol_idx = solution_indices[i]
+            data_inputs = np.array([simulation.drones[i].ml])
 
-        if not render_only_best and simulation.window_open():
-            simulation.Render()
+            predictions = pygad.nn.predict(last_layer=GANN_instance.population_networks[sol_idx],
+                                           data_inputs=data_inputs,
+                                           problem_type="regression")
 
-    simulation.fitness_final()
+            predictions = predictions[0]
 
-    # print("points:", simulation.points)
-    return simulation.points
+            simulation.drones[i].propellers[0].force = predictions[0]
+            simulation.drones[i].propellers[1].force = predictions[1]
+            simulation.drones[i].propellers[2].force = predictions[2]
+            simulation.drones[i].propellers[3].force = predictions[3]
+
+        simulation.update(step)
+
+        if not render_only_best and visualisation.is_window_open():
+            visualisation.render()
+
+    return [drone.points for drone in simulation.drones]
 
 
 def callback_generation(ga_instance):
@@ -124,7 +112,7 @@ initial_population = population_vectors.copy()
 
 num_parents_mating = 4
 
-num_generations = 100
+num_generations = 1
 
 mutation_percent_genes = 10
 
@@ -201,30 +189,40 @@ listener = keyboard.Listener(
 
 listener.start()
 
+
 if render_only_best:
-    simulation.SetupIrrlicht()
+    visualisation = SimulationVisual(simulation)
+
 
 simulation.clear()
-simulation.SetupWorld(random.choice(paths))
-
-simulation.SetupPoints(0, 0.1, 15, 80, 10, 20.0, 3, 10, math.sqrt(5))
+simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=False)
+visualisation.bind_from_simulation()
 
 last = time.time()
 
-while simulation.window_open():
+while visualisation.is_window_open():
     end_time = time.time()
 
     # Calculate elapsed time
     elapsed_time = end_time - last
     last = time.time()
 
-    run_simulation(solution_idx, elapsed_time)
+    data_inputs = np.array([simulation.drones[0].ml])
 
-    simulation.Render()
+    predictions = pygad.nn.predict(last_layer=GANN_instance.population_networks[solution_idx],
+                                   data_inputs=data_inputs,
+                                   problem_type="regression")
+
+    predictions = predictions[0]
+
+    simulation.drones[0].propellers[0].force = predictions[0]
+    simulation.drones[0].propellers[1].force = predictions[1]
+    simulation.drones[0].propellers[2].force = predictions[2]
+    simulation.drones[0].propellers[3].force = predictions[3]
+
+    visualisation.render()
 
     if keys['r'] or simulation.timer >= 10.0:
         simulation.clear()
-
-        simulation.SetupWorld(random.choice(paths))
-
-        simulation.SetupPoints(0, 0.1, 15, 80, 10, 20.0, 3, 10, math.sqrt(5))
+        simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=False)
+        visualisation.bind_from_simulation()
