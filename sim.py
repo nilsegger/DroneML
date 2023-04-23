@@ -48,7 +48,7 @@ class Propeller:
 class PointsConfig:
 
     def __init__(self, abrupt_penalty, points_for_target, crash_penalty, standstill_penalty,
-                 standstill_timeout, min_distance_for_penalty, max_distance_for_penalty, distance_penalty):
+                 standstill_timeout, min_distance_for_penalty, max_distance_for_penalty, distance_penalty, floor_penalty):
         self.abrupt_penalty = abrupt_penalty
         self.points_for_target = points_for_target
         self.crash_penalty = crash_penalty
@@ -58,6 +58,7 @@ class PointsConfig:
         self.min_distance_for_penalty = min_distance_for_penalty
         self.max_distance_for_penalty = max_distance_for_penalty
         self.distance_penalty = distance_penalty
+        self.floor_penalty = floor_penalty
 
 
 class Drone:
@@ -123,6 +124,10 @@ class Drone:
         self.body.GetCollisionModel().SetFamily(2)
         self.body.GetCollisionModel().SetFamilyMaskNoCollisionWithFamily(2)
         self.body.SetCollide(True)
+
+        self.body.SetLimitSpeed(True)
+        self.body.SetMaxSpeed(100)
+        self.body.SetMaxWvel(3.14159 * 10)
 
         self.body.GetVisualShape(0).SetColor(self.color)
 
@@ -271,7 +276,7 @@ class Drone:
             self.points -= self.points_config.abrupt_penalty
 
         # Target following
-        target_thresh = 0.2
+        target_thresh = 0.4
 
         if self.path_next < len(self.path):
             next_target = self.path[self.path_next]
@@ -284,6 +289,9 @@ class Drone:
             if distance > self.points_config.min_distance_for_penalty:
                 distance = min(self.points_config.max_distance_for_penalty, distance)
                 self.points -= self.points_config.distance_penalty / self.points_config.max_distance_for_penalty * distance
+
+        if not self.body.GetContactForce().IsNull() and self.path_next < len(self.path):
+            self.points -= self.points_config.floor_penalty
 
         collision_force_thresh = 500 * 500
 
@@ -353,6 +361,8 @@ class Simulation:
 
         for i in range(n_drones):
             self.drones.append(Drone(self.sys, self.lines_parent, path, self.points_config))
+
+        self.update()
 
     def update(self, time_step=5e-3):
 
@@ -425,6 +435,7 @@ keys = {
     'a': False,
     'd': False,
     'q': False,
+    'x': False,
     'e': False,
     'r': False,
     '0': False,
@@ -458,41 +469,44 @@ def on_release(key):
 
 
 def DroneManualInput(drone):
-    hover_force_mult = 0.95  # Example force in the negative z-direction
+    hover_force_mult = 0.29  # Example force in the negative z-direction
+    mov_force_mult = 1#0.3  # Example force in the negative z-direction
 
     if keys[keyboard.Key.space]:
         # point = chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0)  # Example force in the negative z-direction
         for prop in drone.propellers:
             prop.force = 1.0
-
+    elif keys['x']:
+        for prop in drone.propellers:
+            prop.force = 0.55
     elif keys['w']:
         drone.propellers[0].force = hover_force_mult
         drone.propellers[1].force = hover_force_mult
 
-        drone.propellers[2].force = 1.0
-        drone.propellers[3].force = 1.0
+        drone.propellers[2].force = mov_force_mult
+        drone.propellers[3].force = mov_force_mult
     elif keys['s']:
 
         drone.propellers[2].force = hover_force_mult
         drone.propellers[3].force = hover_force_mult
 
-        drone.propellers[0].force = 1.0
-        drone.propellers[1].force = 1.0
+        drone.propellers[0].force = mov_force_mult
+        drone.propellers[1].force = mov_force_mult
 
     elif keys['d']:
 
         drone.propellers[1].force = hover_force_mult
         drone.propellers[2].force = hover_force_mult
 
-        drone.propellers[0].force = 1.0
-        drone.propellers[3].force = 1.0
+        drone.propellers[0].force = mov_force_mult
+        drone.propellers[3].force = mov_force_mult
 
     elif keys['a']:
         drone.propellers[0].force = hover_force_mult
         drone.propellers[3].force = hover_force_mult
 
-        drone.propellers[1].force = 1.0
-        drone.propellers[2].force = 1.0
+        drone.propellers[1].force = mov_force_mult
+        drone.propellers[2].force = mov_force_mult
     elif keys['q']:
         drone.propellers[1].force = 1.0
         drone.propellers[3].force = 1.0
@@ -538,8 +552,8 @@ if __name__ == '__main__':
 
     make_path_dense(paths, 0.1)
 
-    simulation = Simulation(PointsConfig(5, 100, 10, 1, 10.0, 4, 10, 0.05), update_rays_every_n_frame=6)
-    simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=True)
+    simulation = Simulation(PointsConfig(5, 100, 10, 1, 10.0, 4, 10, 0.05, 0.1), update_rays_every_n_frame=6)
+    simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=False)
 
     window = SimulationVisual(simulation)
 
@@ -574,13 +588,13 @@ if __name__ == '__main__':
 
         if last_points != simulation.drones[current_drone].points:
             last_points = simulation.drones[current_drone].points
-            # print(last_points)
+            print(last_points)
 
         if frames == 100:
             timeout = 30.0
             time_step = 1 / 30
             avg_time_for_one_frame = frames_time / 100.0
-            print(timeout, "seconds of sim would take", timeout / time_step * avg_time_for_one_frame, "avg time for one frame", avg_time_for_one_frame)
+            # print(timeout, "seconds of sim would take", timeout / time_step * avg_time_for_one_frame, "avg time for one frame", avg_time_for_one_frame)
             frames = 0
             frames_time = 0
 
