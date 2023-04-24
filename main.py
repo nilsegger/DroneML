@@ -1,79 +1,73 @@
 import datetime
 import time
 import random
-
-import pygad.kerasga
-import tensorflow as tf
-import numpy as np
+import pickle
 
 from sim import Simulation, paths, make_path_dense, PointsConfig
+from train import *
 
-# Hide GPU from visible devices
-# from what we gather, gpu is only really an improvement if you are teaching your neural network
-tf.config.set_visible_devices([], 'GPU')
-print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
-# tf.debugging.set_log_device_placement(True)
+load_ga_instance_file = 'pro'  # if none no file will be loaded, no extension!
+save_every_n_gens = 10  # if none only final result is saved
 
-input_size = 35
+input_size = 23
 hiddenlayer1_size = 256
 hiddenlayer2_size = 256
 output_layer_size = 4
 
 step = 1 / 30
+update_rays_every_n_frame = 10
+timeout_per_simulation = 10.0
 points_config = PointsConfig(5, 10, 50, 1, 5, 2, 5, 0.01, 0.1)
 
 num_solutions = 10
-num_generations = 10
+num_generations = 100
 num_parents_mating = 4
 
-input_layer = tf.keras.layers.Input(input_size)
-dense_layer1 = tf.keras.layers.Dense(hiddenlayer1_size, activation="relu")(input_layer)
-dense_layer2 = tf.keras.layers.Dense(hiddenlayer2_size, activation="relu")(input_layer)
-output_layer = tf.keras.layers.Dense(output_layer_size, activation="tanh")(dense_layer2)
-
-keras_model = tf.keras.Model(inputs=input_layer, outputs=output_layer)
-
-keras_ga = pygad.kerasga.KerasGA(model=keras_model,
-                                 num_solutions=10)
-
-make_path_dense(paths, 0.1)
+batch_size = 10
 
 
-def get_model_from_solution(model, solution):
-    # Fetch the parameters of the best solution.
-    solution_weights = pygad.kerasga.model_weights_as_matrix(model=model,
-                                                             weights_vector=solution)
-    _model = tf.keras.models.clone_model(model)
-    _model.set_weights(solution_weights)
-
-    return _model
+def get_time_formatted():
+    now = datetime.datetime.now()
+    return now.strftime("%Y-%m-%d_%H-%M-%S")
 
 
-def fitness_func(instance, solution, solution_idx):
+def save():
+    global ga_instance
+    filename = "progress_gen_" + str(ga_instance.generations_completed) + "_" + get_time_formatted()
+
+    ga_instance.fitness_func = None
+    ga_instance.on_generation = None
+    ga_instance.save(filename)
+    ga_instance.fitness_func = fitness_func
+    ga_instance.on_generation = callback_generation
+
+    best_solution, _, _ = ga_instance.best_solution()
+    best_solution_filename = "best_solution_gen_" + str(
+        ga_instance.generations_completed) + "_" + get_time_formatted() + ".pkl"
+    with open(best_solution_filename, 'wb') as f:
+        pickle.dump(best_solution, f)
+
+
+def fitness_func(instance, solutions, solution_indices):
     global keras_ga, keras_model
 
-    simulation = Simulation(points_config, update_rays_every_n_frame=10)
+    if not isinstance(solution_indices, np.ndarray):
+        solutions = [solutions]
+        # solution_indices = [solution_indices]
+
+    simulation.clear()
+    simulation.setup_world(random.choice(paths), len(solutions), ignore_visualisation_objects=True)
 
     begin = time.time()
 
-    timeout = 15.0
+    timeout = timeout_per_simulation
 
-    simulation.clear()
-    simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=False)
-
-    weighted_model = get_model_from_solution(keras_model, solution)
+    models = [get_model_from_solution(keras_model, solution) for solution in solutions]
 
     while simulation.timer <= timeout:
-        data_input = np.array([simulation.drones[0].ml])
 
-        predictions = weighted_model(data_input)
-
-        predictions = predictions[0]
-
-        simulation.drones[0].propellers[0].force = max(-1.0, min(float(predictions[0]), 1.0))
-        simulation.drones[0].propellers[1].force = max(-1.0, min(float(predictions[1]), 1.0))
-        simulation.drones[0].propellers[2].force = max(-1.0, min(float(predictions[2]), 1.0))
-        simulation.drones[0].propellers[3].force = max(-1.0, min(float(predictions[3]), 1.0))
+        for i in range(len(solutions)):
+            predict_for_drone(models[i], simulation.drones[i])
 
         simulation.update(step)
 
@@ -84,50 +78,61 @@ def fitness_func(instance, solution, solution_idx):
 
     points = [drone.points for drone in simulation.drones]
 
-    print(1, "networks", round(elapsed_time), "seconds", points)
+    print(len(solutions), "networks", round(elapsed_time, 3), "seconds", points)
 
+    if isinstance(solution_indices, np.ndarray):
+        return points
     return points[0]
 
 
 def callback_generation(instance):
+    # if save_every_n_gens is not None and instance.generations_completed % save_every_n_gens == 0:
+    # save()
+
     print("Generation = {generation}".format(generation=instance.generations_completed))
     print("Fitness    = {fitness}".format(fitness=instance.best_solution()[1]))
 
 
-initial_population = keras_ga.population_weights  # Initial population of network weights
+if __name__ == '__main__':
 
-ga_instance = pygad.GA(
-    num_generations=num_generations,
-    num_parents_mating=num_parents_mating,
-    initial_population=initial_population,
-    fitness_func=fitness_func,
-    on_generation=callback_generation
-)
+    # Hide GPU from visible devices
+    # from what we gather, gpu is only really an improvement if you are teaching your neural network
+    tf.config.set_visible_devices([], 'GPU')
+    print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+    # tf.debugging.set_log_device_placement(True)
 
-ga_instance.run()
+    simulation = Simulation(points_config, update_rays_every_n_frame=update_rays_every_n_frame)
 
-now = datetime.datetime.now()
-formatted_time = now.strftime("%Y-%m-%d_%H-%M-%S")
-filename = "progress_" + formatted_time + ".pkl"
-ga_instance.fitness_func = None
-ga_instance.save(filename)
-ga_instance.fitness_func = fitness_func
+    keras_model = create_model(input_size, hiddenlayer1_size, hiddenlayer2_size, output_layer_size)
 
-ga_instance.plot_fitness("Iteration vs. Fitness", linewidth=4)
+    keras_ga = pygad.kerasga.KerasGA(model=keras_model,
+                                     num_solutions=num_solutions)
 
-# Returning the details of the best solution.
-best_solution, best_solution_fitness, best_solution_idx = ga_instance.best_solution()
-print("Fitness value of the best solution = {solution_fitness}".format(solution_fitness=best_solution_fitness))
-print("Index of the best solution : {solution_idx}".format(solution_idx=best_solution_idx))
+    make_path_dense(paths, 0.1)
 
-"""
-# Make prediction based on the best solution.
-predictions = pygad.kerasga.predict(model=model,
-                                    solution=solution,
-                                    data=data_inputs)
-print("Predictions : \n", predictions)
+    initial_population = keras_ga.population_weights  # Initial population of network weights
 
-mae = tf.keras.losses.MeanAbsoluteError()
-abs_error = mae(data_outputs, predictions).numpy()
-print("Absolute Error : ", abs_error)
-"""
+    ga_instance = None
+
+    if load_ga_instance_file is None:
+        ga_instance = pygad.GA(
+            num_generations=num_generations,
+            num_parents_mating=num_parents_mating,
+            initial_population=initial_population,
+            fitness_func=fitness_func,
+            fitness_batch_size=batch_size,
+            on_generation=callback_generation
+        )
+    else:
+        ga_instance = pygad.load(load_ga_instance_file)
+        ga_instance.on_generation = callback_generation
+        ga_instance.fitness_func = fitness_func
+        ga_instance.num_generations = num_generations
+        ga_instance.num_parents_mating = num_parents_mating
+        ga_instance.fitness_batch_size = batch_size
+
+    ga_instance.run()
+
+    save()
+
+    ga_instance.plot_fitness("Iteration vs. Fitness", linewidth=4)

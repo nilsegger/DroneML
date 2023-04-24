@@ -72,23 +72,23 @@ class Drone:
 
     rays = [
         forward,
-        chrono.ChVectorD(-1, 0, 0),
-        up,
+        # chrono.ChVectorD(-1, 0, 0),
+        # up,
         chrono.ChVectorD(0, -1, 0),
-        right,
-        chrono.ChVectorD(0, 0, -1),
-        (forward + right).GetNormalized(),
-        (forward - right).GetNormalized(),
-        (-forward + right).GetNormalized(),
-        (-forward - right).GetNormalized(),
-        (forward + right + up).GetNormalized(),
-        (forward + right - up).GetNormalized(),
-        (forward - right + up).GetNormalized(),
-        (forward - right - up).GetNormalized(),
-        (-forward + right + up).GetNormalized(),
-        (-forward - right + up).GetNormalized(),
-        (-forward + right - up).GetNormalized(),
-        (-forward - right - up).GetNormalized(),
+        # right,
+        # chrono.ChVectorD(0, 0, -1),
+        # (forward + right).GetNormalized(),
+        # (forward - right).GetNormalized(),
+        # (-forward + right).GetNormalized(),
+        # (-forward - right).GetNormalized(),
+        (forward + (right / 2.0) + (up / 2.0)).GetNormalized(),
+        (forward + (right / 2.0) - (up / 2.0)).GetNormalized(),
+        (forward - (right / 2.0) + (up / 2.0)).GetNormalized(),
+        (forward - (right / 2.0) - (up / 2.0)).GetNormalized(),
+        # (-forward + right + up).GetNormalized(),
+        # (-forward - right + up).GetNormalized(),
+        # (-forward + right - up).GetNormalized(),
+        # (-forward - right - up).GetNormalized(),
     ]
 
     ray_length = 10
@@ -158,12 +158,12 @@ class Drone:
         self.path_next = 1
 
         self._target = chrono.ChVectorD(0, 0, 0)
-        self._rays_lengths = [0.0] * 18
+        self._rays_lengths = [0.0] * len(self.rays)
 
         self.ray_shapes = []
 
         if origin_object is not None:
-            for i in range(18):
+            for i in range(len(self.rays)):
                 mpathasset = chrono.ChLineShape()
                 mpathasset.SetColor(self.color)
                 origin_object.AddVisualShape(mpathasset)
@@ -331,7 +331,7 @@ class Drone:
 
 class Simulation:
 
-    def __init__(self, points_config: PointsConfig, update_rays_every_n_frame=1):
+    def __init__(self, points_config: PointsConfig, update_rays_every_n_frame=0):
 
         self.sys = chrono.ChSystemNSC()
         self.lines_parent = None
@@ -391,7 +391,7 @@ class Simulation:
 
         self.ray_update_counter += 1
 
-        if self.ray_update_counter == self.update_rays_every_n_frame:
+        if self.update_rays_every_n_frame == 0 or self.ray_update_counter == self.update_rays_every_n_frame:
 
             for drone in self.drones:
                 drone.body.SetCollide(False)
@@ -487,7 +487,7 @@ def on_release(key):
 
 def DroneManualInput(drone):
     hover_force_mult = 0.29  # Example force in the negative z-direction
-    mov_force_mult = 1#0.3  # Example force in the negative z-direction
+    mov_force_mult = 0.3  # Example force in the negative z-direction
 
     if keys[keyboard.Key.space]:
         # point = chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0)  # Example force in the negative z-direction
