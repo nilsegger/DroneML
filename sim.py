@@ -91,6 +91,11 @@ class Drone:
         (-forward - right - up).GetNormalized(),
     ]
 
+    ray_length = 10
+    ray_length_squared = 100
+    max_speed = 100
+    max_angular = 3.14159 * 10
+
     colors = [
         chrono.ChColor(1, 0, 0),  # Red
         chrono.ChColor(0, 1, 0),  # Green
@@ -104,9 +109,10 @@ class Drone:
         chrono.ChColor(0.25, 0.88, 0.82)  # Turquoise
     ]
 
-    def __init__(self, sys, origin_object, path, points_config: PointsConfig):
+    def __init__(self, sys, origin_object, world_scale, path, points_config: PointsConfig):
 
         self.collision_system = sys.GetCollisionSystem()
+        self.world_scale = world_scale
 
         self.points = 0
         self.standstill_timer = 0
@@ -126,8 +132,8 @@ class Drone:
         self.body.SetCollide(True)
 
         self.body.SetLimitSpeed(True)
-        self.body.SetMaxSpeed(100)
-        self.body.SetMaxWvel(3.14159 * 10)
+        self.body.SetMaxSpeed(self.max_speed)
+        self.body.SetMaxWvel(self.max_angular)
 
         self.body.GetVisualShape(0).SetColor(self.color)
 
@@ -243,8 +249,7 @@ class Drone:
 
         for i in range(len(self.rays)):
             direction = self.rays[i]
-            ray_length = 10.0
-            end_point = self.body.GetPos() + self.body.TransformDirectionLocalToParent(direction) * ray_length
+            end_point = self.body.GetPos() + self.body.TransformDirectionLocalToParent(direction) * self.ray_length
 
             ray_result = chrono.ChRayhitResult()
             self.collision_system.RayHit(start_point, end_point, ray_result)
@@ -257,7 +262,7 @@ class Drone:
                     self.ray_shapes[i].SetLineGeometry(self.create_ray_line(start_point, ray_result.abs_hitPoint))
                     self.ray_shapes[i].SetColor(chrono.ChColor(1, 0, 0))
             else:
-                self._rays_lengths.append(ray_length * ray_length)
+                self._rays_lengths.append(self.ray_length_squared)
 
                 if len(self.ray_shapes) > 0:
                     self.ray_shapes[i].SetLineGeometry(self.create_ray_line(start_point, end_point))
@@ -309,8 +314,19 @@ class Drone:
     @property
     def ml(self):
         return [self.target.x, self.target.y, self.target.z, self.body.GetPos().x, self.body.GetPos().y,
-                self.body.GetPos().z, self.body.GetRot().e0, self.body.GetRot().e1, self.body.GetRot().e2,
-                self.body.GetRot().e3] + self._rays_lengths
+                self.body.GetPos().z, self.body.GetPos_dt().x, self.body.GetPos_dt().y, self.body.GetPos_dt().z, self.body.GetRot().e0, self.body.GetRot().e1, self.body.GetRot().e2,
+                self.body.GetRot().e3, self.body.GetRot_dt().e0, self.body.GetRot_dt().e1, self.body.GetRot_dt().e2, self.body.GetRot_dt().e3] + self._rays_lengths
+
+    @property
+    def ml_scaled(self):
+        return [
+            self.target.x / self.world_scale, self.target.y / self.world_scale, self.target.z / self.world_scale,
+            self.body.GetPos().x / self.world_scale, self.body.GetPos().y / self.world_scale, self.body.GetPos().z / self.world_scale,
+            self.body.GetPos_dt().x / self.max_speed, self.body.GetPos_dt().y / self.max_speed, self.body.GetPos_dt().z / self.max_speed,
+            self.body.GetRot().e0, self.body.GetRot().e1, self.body.GetRot().e2, self.body.GetRot().e3,
+            self.body.GetRot_dt().e0, self.body.GetRot_dt().e1, self.body.GetRot_dt().e2, self.body.GetRot_dt().e3
+            ] + [ray / self.ray_length_squared for ray in self._rays_lengths]
+
 
 
 class Simulation:
@@ -329,11 +345,12 @@ class Simulation:
 
         self.timer = 0.0
 
-        mfloor = chrono.ChBodyEasyBox(50, 10, 50, 1000)
+        world_scale = 50
+        mfloor = chrono.ChBodyEasyBox(world_scale, 10, world_scale, 1000)
         mfloor.SetBodyFixed(True)
         mfloor.SetPos(chrono.ChVectorD(0, -5, 0))
         mfloor.SetCollide(True)
-        mfloor.GetCollisionModel().AddBox(material, 25, 5, 25)
+        mfloor.GetCollisionModel().AddBox(material, world_scale / 2, 5, world_scale / 2)
         mfloor.GetCollisionModel().BuildModel()
         self.sys.Add(mfloor)
 
@@ -360,7 +377,7 @@ class Simulation:
             self.lines_parent.AddVisualShape(path_shape)
 
         for i in range(n_drones):
-            self.drones.append(Drone(self.sys, self.lines_parent, path, self.points_config))
+            self.drones.append(Drone(self.sys, self.lines_parent, world_scale, path, self.points_config))
 
         self.update()
 

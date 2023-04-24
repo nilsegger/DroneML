@@ -8,112 +8,115 @@ import pygad.nn
 import random
 import datetime
 import time
+from multiprocessing import Pool
+from multiprocessing.pool import ThreadPool
+
+pool_size = 10
 
 import tensorflow as tf
 
+# Hide GPU from visible devices
+# from what we gather, gpu is only really an improvement if you are teaching your neural network
+tf.config.set_visible_devices([], 'GPU')
+
+inputsize = 35
+hiddenlayer1 = 256
+hiddenlayer2 = 256
+outputlayer = 4
+
+temp1 = inputsize * hiddenlayer1
+temp2 = temp1 + hiddenlayer1
+temp3 = temp2 + hiddenlayer1 * hiddenlayer2
+temp4 = temp3 + hiddenlayer2
+temp5 = temp4 + hiddenlayer2 * outputlayer
+
 print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+# tf.debugging.set_log_device_placement(True)
 
 now = datetime.datetime.now()
 formatted_time = now.strftime("%Y-%m-%d_%H-%M-%S")
 filename = "progress_" + formatted_time + ".pkl"
 
-initial_population_file = None  # 'progress_2023-04-18_22-05-33.pkl' # None # 'lucky_drone_fitness_81.pkl' # None # 'test.pkl'
-
-output_population_file = filename  # 'test.pkl'
-initial_population_matrices = None
-
-render_only_best = True
-
 make_path_dense(paths, 0.1)
 
 step = 1 / 30
 points_config = PointsConfig(5, 10, 50, 1, 5, 2, 5, 0.01, 0.1)
-simulation = Simulation(points_config, update_rays_every_n_frame=6)
-visualisation = None
 
-if not render_only_best:
-    visualisation = SimulationVisual(simulation)
-
-
-def fitness_func(ga_instance, solution, solution_idx):
+def fitness_func(ga_instance, solutions, solution_indices):
 
     # Create a neural network using the solution weights and biases
-    network = create_network(solution)
+    with ThreadPool(pool_size) as p:
+        networks = p.map(create_network, solutions)
 
     # Run the simulation and calculate the fitness score
-    fitness = run_simulation(network, solution_idx)
+    fitness = run_simulation(networks)
 
     # Return the fitness score
     return fitness
 
 
-def run_simulation(network, solution_idx):
+def run_simulation(networks):
     # Run the simulation with the given neural network
     # e.g. use a physics engine to simulate the drone movement
     # evaluate the fitness based on the problem definition
 
+    simulation = Simulation(points_config, update_rays_every_n_frame=10)
+
     begin = time.time()
 
-    timeout = 30.0
+    timeout = 15.0
 
     simulation.clear()
-    simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=False)
+    simulation.setup_world(random.choice(paths), len(networks), ignore_visualisation_objects=False)
 
-    if not render_only_best:
-        visualisation.bind_from_simulation()
+    with ThreadPool(pool_size) as p:
 
-    while simulation.timer <= timeout:
+        while simulation.timer <= timeout:
 
-        data_inputs = np.array([simulation.drones[0].ml])
+            inputs = [(networks[i], np.array([simulation.drones[i].ml_scaled])) for i in range(len(networks))]
 
-        # print("Inputs", data_inputs[0])
+            # print(inputs)
 
-        predictions = network(data_inputs, training=False)
+            predictions = p.map(lambda t: t[0](t[1], training=False), inputs)
 
-        simulation.drones[0].propellers[0].force = (float(predictions[0][0]) + 1)/2
-        simulation.drones[0].propellers[1].force = (float(predictions[0][1]) + 1)/2
-        simulation.drones[0].propellers[2].force = (float(predictions[0][2]) + 1)/2
-        simulation.drones[0].propellers[3].force = (float(predictions[0][3]) + 1)/2
+            # print(predictions)
 
-        # print("Predictions:", predictions)
+            for i in range(len(networks)):
+                preds = predictions[i][0]
+                print(preds)
 
-        simulation.update(step)
+                simulation.drones[i].propellers[0].force = max(-1.0, min(float(preds[0]), 1.0))
+                simulation.drones[i].propellers[1].force = max(-1.0, min(float(preds[1]), 1.0))
+                simulation.drones[i].propellers[2].force = max(-1.0, min(float(preds[2]), 1.0))
+                simulation.drones[i].propellers[3].force = max(-1.0, min(float(preds[3]), 1.0))
 
-        if not render_only_best and visualisation.is_window_open():
-            visualisation.render()
+            simulation.update(step)
 
     end_time = time.time()
 
     # Calculate elapsed time
     elapsed_time = end_time - begin
 
-    print("One simulation took:", elapsed_time)
+    points = [drone.points for drone in simulation.drones]
 
-    return simulation.drones[0].points  # [drone.points for drone in simulation.drones]
+    print(len(networks), "networks", round(elapsed_time), "seconds", points)
+
+    return points
 
 
 def create_network(solution):
     # Create a neural network with 25 input nodes and 4 output nodes
-    inputsize = 28
-    hiddenlayer1 = 256
-    hiddenlayer2 = 256
-    outputlayer = 4
 
     network = Sequential([
         Input(shape=(inputsize,)),
-        Dense(hiddenlayer1, activation='tanh', use_bias=True),
-        Dense(hiddenlayer2, activation='tanh', use_bias=True),
-        Dense(outputlayer, activation='relu', use_bias=True)
+        Dense(hiddenlayer1, activation='relu', use_bias=True),
+        Dense(hiddenlayer2, activation='relu', use_bias=True),
+        Dense(outputlayer, activation='tanh', use_bias=True)
     ])
 
     # Set the weights and biases of the neural network to the values in the solution array
     start = 0
     # Get the shape of the layer's weights
-    temp1 = inputsize * hiddenlayer1
-    temp2 = temp1 + hiddenlayer1
-    temp3 = temp2 + hiddenlayer1 * hiddenlayer2
-    temp4 = temp3 + hiddenlayer2
-    temp5 = temp4 + hiddenlayer2 * outputlayer
 
     weights_layer1 = solution[:temp1].reshape((inputsize, hiddenlayer1))
     biases_layer1 = solution[temp1:temp2]
@@ -134,11 +137,11 @@ def create_network(solution):
 
 num_parents_mating = 4
 
-num_generations = 1
+num_generations = 100
 
 mutation_percent_genes = 10
 
-sol_per_pop = 100
+sol_per_pop = 30
 
 parent_selection_type = "sus"
 
@@ -159,9 +162,9 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        num_parents_mating=num_parents_mating,
                        # initial_population=initial_population,
                        sol_per_pop=sol_per_pop,
-                       num_genes=74244,
+                       num_genes=temp5 + outputlayer,
                        fitness_func=fitness_func,
-                       fitness_batch_size=20,
+                       fitness_batch_size=10,
                        mutation_percent_genes=mutation_percent_genes,
                        init_range_low=init_range_low,
                        init_range_high=init_range_high,
@@ -172,7 +175,11 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        # keep_parents=keep_parents,
                        # keep_elitism=keep_elitism,
                        # on_generation=callback_generation,
-                       # parallel_processing=10
+                       # parallel_processing=["thread", 4]
                        )
 
 ga_instance.run()
+
+ga_instance.fitness_func = None
+
+ga_instance.save(filename)
