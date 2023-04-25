@@ -48,7 +48,8 @@ class Propeller:
 class PointsConfig:
 
     def __init__(self, abrupt_penalty, points_for_target, crash_penalty, standstill_penalty,
-                 standstill_timeout, min_distance_for_penalty, max_distance_for_penalty, distance_penalty, floor_penalty):
+                 standstill_timeout, min_distance_for_penalty, max_distance_for_penalty, distance_penalty,
+                 floor_penalty):
         self.abrupt_penalty = abrupt_penalty
         self.points_for_target = points_for_target
         self.crash_penalty = crash_penalty
@@ -66,33 +67,6 @@ class Drone:
     mass = 0.895
     max_force = chrono.ChVectorD(0.0, 4.5, 0.0)
 
-    forward = chrono.ChVectorD(1, 0, 0)
-    right = chrono.ChVectorD(0, 0, 1)
-    up = chrono.ChVectorD(0, 1, 0)
-
-    rays = [
-        forward,
-        # chrono.ChVectorD(-1, 0, 0),
-        # up,
-        chrono.ChVectorD(0, -1, 0),
-        # right,
-        # chrono.ChVectorD(0, 0, -1),
-        # (forward + right).GetNormalized(),
-        # (forward - right).GetNormalized(),
-        # (-forward + right).GetNormalized(),
-        # (-forward - right).GetNormalized(),
-        (forward + (right / 2.0) + (up / 2.0)).GetNormalized(),
-        (forward + (right / 2.0) - (up / 2.0)).GetNormalized(),
-        (forward - (right / 2.0) + (up / 2.0)).GetNormalized(),
-        (forward - (right / 2.0) - (up / 2.0)).GetNormalized(),
-        # (-forward + right + up).GetNormalized(),
-        # (-forward - right + up).GetNormalized(),
-        # (-forward + right - up).GetNormalized(),
-        # (-forward - right - up).GetNormalized(),
-    ]
-
-    ray_length = 10
-    ray_length_squared = 100
     max_speed = 100
     max_angular = 3.14159 * 10
 
@@ -109,10 +83,9 @@ class Drone:
         chrono.ChColor(0.25, 0.88, 0.82)  # Turquoise
     ]
 
-    def __init__(self, sys, origin_object, world_scale, path, points_config: PointsConfig):
+    def __init__(self, sys, origin_object, path, points_config: PointsConfig):
 
         self.collision_system = sys.GetCollisionSystem()
-        self.world_scale = world_scale
 
         self.points = 0
         self.standstill_timer = 0
@@ -158,16 +131,6 @@ class Drone:
         self.path_next = 1
 
         self._target = chrono.ChVectorD(0, 0, 0)
-        self._rays_lengths = [0.0] * len(self.rays)
-
-        self.ray_shapes = []
-
-        if origin_object is not None:
-            for i in range(len(self.rays)):
-                mpathasset = chrono.ChLineShape()
-                mpathasset.SetColor(self.color)
-                origin_object.AddVisualShape(mpathasset)
-                self.ray_shapes.append(mpathasset)
 
     def update(self, time_step):
         yaw = (self.propellers[1].force + self.propellers[3].force) - (
@@ -234,40 +197,6 @@ class Drone:
     def target(self):
         return self._target
 
-    def create_ray_line(self, start, end):
-        mpath = chrono.ChLinePath()
-        mseg1 = chrono.ChLineSegment(start, end)
-        mpath.AddSubLine(mseg1)
-        mpath.Set_closed(False)
-        return mpath
-
-    def update_rays(self):
-
-        start_point = self.body.GetPos()
-
-        self._rays_lengths.clear()
-
-        for i in range(len(self.rays)):
-            direction = self.rays[i]
-            end_point = self.body.GetPos() + self.body.TransformDirectionLocalToParent(direction) * self.ray_length
-
-            ray_result = chrono.ChRayhitResult()
-            self.collision_system.RayHit(start_point, end_point, ray_result)
-
-            # Check if there was a collision
-            if ray_result.hit:
-                self._rays_lengths.append((ray_result.abs_hitPoint - start_point).Length2())
-
-                if len(self.ray_shapes) > 0:
-                    self.ray_shapes[i].SetLineGeometry(self.create_ray_line(start_point, ray_result.abs_hitPoint))
-                    self.ray_shapes[i].SetColor(chrono.ChColor(1, 0, 0))
-            else:
-                self._rays_lengths.append(self.ray_length_squared)
-
-                if len(self.ray_shapes) > 0:
-                    self.ray_shapes[i].SetLineGeometry(self.create_ray_line(start_point, end_point))
-                    self.ray_shapes[i].SetColor(self.color)
-
     def fitness_update(self, step):
 
         # Smoothness
@@ -314,32 +243,21 @@ class Drone:
     @property
     def ml(self):
         return [self.target.x, self.target.y, self.target.z, self.body.GetPos().x, self.body.GetPos().y,
-                self.body.GetPos().z, self.body.GetPos_dt().x, self.body.GetPos_dt().y, self.body.GetPos_dt().z, self.body.GetRot().e0, self.body.GetRot().e1, self.body.GetRot().e2,
-                self.body.GetRot().e3, self.body.GetRot_dt().e0, self.body.GetRot_dt().e1, self.body.GetRot_dt().e2, self.body.GetRot_dt().e3] + self._rays_lengths
-
-    @property
-    def ml_scaled(self):
-        return [
-            self.target.x / self.world_scale, self.target.y / self.world_scale, self.target.z / self.world_scale,
-            self.body.GetPos().x / self.world_scale, self.body.GetPos().y / self.world_scale, self.body.GetPos().z / self.world_scale,
-            self.body.GetPos_dt().x / self.max_speed, self.body.GetPos_dt().y / self.max_speed, self.body.GetPos_dt().z / self.max_speed,
-            self.body.GetRot().e0, self.body.GetRot().e1, self.body.GetRot().e2, self.body.GetRot().e3,
-            self.body.GetRot_dt().e0, self.body.GetRot_dt().e1, self.body.GetRot_dt().e2, self.body.GetRot_dt().e3
-            ] + [ray / self.ray_length_squared for ray in self._rays_lengths]
-
+                self.body.GetPos().z, self.body.GetPos_dt().x, self.body.GetPos_dt().y, self.body.GetPos_dt().z,
+                self.body.GetRot().e0, self.body.GetRot().e1, self.body.GetRot().e2,
+                self.body.GetRot().e3, self.body.GetRot_dt().e0, self.body.GetRot_dt().e1, self.body.GetRot_dt().e2,
+                self.body.GetRot_dt().e3]
 
 
 class Simulation:
 
-    def __init__(self, points_config: PointsConfig, update_rays_every_n_frame=0):
+    def __init__(self, points_config: PointsConfig):
 
         self.sys = chrono.ChSystemNSC()
         self.lines_parent = None
         self.drones = []
         self.points_config = points_config
         self.timer = 0.0
-        self.update_rays_every_n_frame = update_rays_every_n_frame
-        self.ray_update_counter = 0
 
     def setup_world(self, path, n_drones, ignore_visualisation_objects=True):
 
@@ -377,7 +295,7 @@ class Simulation:
             self.lines_parent.AddVisualShape(path_shape)
 
         for i in range(n_drones):
-            self.drones.append(Drone(self.sys, self.lines_parent, world_scale, path, self.points_config))
+            self.drones.append(Drone(self.sys, self.lines_parent, path, self.points_config))
 
         self.update()
 
@@ -388,21 +306,6 @@ class Simulation:
 
         self.timer += time_step
         self.sys.DoStepDynamics(time_step)
-
-        self.ray_update_counter += 1
-
-        if self.update_rays_every_n_frame == 0 or self.ray_update_counter == self.update_rays_every_n_frame:
-
-            for drone in self.drones:
-                drone.body.SetCollide(False)
-
-            for drone in self.drones:
-                drone.update_rays()
-
-            for drone in self.drones:
-                drone.body.SetCollide(True)
-
-            self.ray_update_counter = 0
 
     def clear(self):
         self.sys.Clear()
@@ -569,7 +472,7 @@ if __name__ == '__main__':
 
     make_path_dense(paths, 0.1)
 
-    simulation = Simulation(PointsConfig(5, 100, 10, 1, 10.0, 4, 10, 0.05, 0.1), update_rays_every_n_frame=6)
+    simulation = Simulation(PointsConfig(5, 100, 10, 1, 10.0, 4, 10, 0.05, 0.1))
     simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=False)
 
     window = SimulationVisual(simulation)
