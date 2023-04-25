@@ -9,15 +9,14 @@ from train import *
 load_ga_instance_file = None  # if none no file will be loaded, no extension!
 save_every_n_gens = 100  # if none only final result is saved
 
-input_size = 23
+input_size = 17
 hiddenlayer1_size = 256
 hiddenlayer2_size = 256
 output_layer_size = 4
 
 step = 1 / 30
-update_rays_every_n_frame = 10
-timeout_per_simulation = 10.0
-points_config = PointsConfig(5, 10, 50, 1, 5, 2, 5, 0.01, 0.1)
+timeout_per_simulation = 20.0
+points_config = PointsConfig(30, 20, 80, 10, 7, 0.5, 4, 40, 15)
 
 num_solutions = 10
 num_generations = 1
