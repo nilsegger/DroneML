@@ -6,8 +6,8 @@ import pickle
 from sim import Simulation, paths, make_path_dense, PointsConfig
 from train import *
 
-load_ga_instance_file = 'pro'  # if none no file will be loaded, no extension!
-save_every_n_gens = 10  # if none only final result is saved
+load_ga_instance_file = None  # if none no file will be loaded, no extension!
+save_every_n_gens = 100  # if none only final result is saved
 
 input_size = 23
 hiddenlayer1_size = 256
@@ -20,7 +20,7 @@ timeout_per_simulation = 10.0
 points_config = PointsConfig(5, 10, 50, 1, 5, 2, 5, 0.01, 0.1)
 
 num_solutions = 10
-num_generations = 100
+num_generations = 1
 num_parents_mating = 4
 
 batch_size = 10
@@ -33,7 +33,7 @@ def get_time_formatted():
 
 def save():
     global ga_instance
-    filename = "progress_gen_" + str(ga_instance.generations_completed) + "_" + get_time_formatted()
+    filename = "output/progress_gen_" + str(ga_instance.generations_completed) + "_" + get_time_formatted()
 
     ga_instance.fitness_func = None
     ga_instance.on_generation = None
@@ -42,7 +42,7 @@ def save():
     ga_instance.on_generation = callback_generation
 
     best_solution, _, _ = ga_instance.best_solution()
-    best_solution_filename = "best_solution_gen_" + str(
+    best_solution_filename = "output/best_solution_gen_" + str(
         ga_instance.generations_completed) + "_" + get_time_formatted() + ".pkl"
     with open(best_solution_filename, 'wb') as f:
         pickle.dump(best_solution, f)
@@ -53,7 +53,6 @@ def fitness_func(instance, solutions, solution_indices):
 
     if not isinstance(solution_indices, np.ndarray):
         solutions = [solutions]
-        # solution_indices = [solution_indices]
 
     simulation.clear()
     simulation.setup_world(random.choice(paths), len(solutions), ignore_visualisation_objects=True)
@@ -86,8 +85,8 @@ def fitness_func(instance, solutions, solution_indices):
 
 
 def callback_generation(instance):
-    # if save_every_n_gens is not None and instance.generations_completed % save_every_n_gens == 0:
-    # save()
+    if save_every_n_gens is not None and instance.generations_completed % save_every_n_gens == 0:
+        save()
 
     print("Generation = {generation}".format(generation=instance.generations_completed))
     print("Fitness    = {fitness}".format(fitness=instance.best_solution()[1]))
@@ -101,7 +100,7 @@ if __name__ == '__main__':
     print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
     # tf.debugging.set_log_device_placement(True)
 
-    simulation = Simulation(points_config, update_rays_every_n_frame=update_rays_every_n_frame)
+    simulation = Simulation(points_config)
 
     keras_model = create_model(input_size, hiddenlayer1_size, hiddenlayer2_size, output_layer_size)
 

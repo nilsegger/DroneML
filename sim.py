@@ -207,27 +207,26 @@ class Drone:
             current_rotation_dt.e3)
 
         if rot_sum >= thresh:
-            self.points -= self.points_config.abrupt_penalty
+            self.points -= self.points_config.abrupt_penalty * step
 
         # Target following
         target_thresh = 0.4
 
         if self.path_next < len(self.path):
             next_target = self.path[self.path_next]
-            distance = (next_target - self.body.GetPos()).Length2()
+            distance = (next_target - self.body.GetPos()).Length()
 
-            if distance < target_thresh * target_thresh:  # target was hit
+            if distance < target_thresh:  # target was hit
                 self.points += self.points_config.points_for_target
                 self.path_next += 1
 
             if distance > self.points_config.min_distance_for_penalty:
-                distance = min(self.points_config.max_distance_for_penalty, distance)
-                self.points -= self.points_config.distance_penalty / self.points_config.max_distance_for_penalty * distance
+                self.points -= (self.points_config.distance_penalty * step) / (self.points_config.max_distance_for_penalty - self.points_config.min_distance_for_penalty) * (distance - self.points_config.min_distance_for_penalty)
 
         if not self.body.GetContactForce().IsNull() and self.path_next < len(self.path):
-            self.points -= self.points_config.floor_penalty
+            self.points -= self.points_config.floor_penalty * step
 
-        collision_force_thresh = 500 * 500
+        collision_force_thresh = 250 * 250
 
         if self.body.GetContactForce().Length2() >= collision_force_thresh:
             self.points -= self.points_config.crash_penalty
@@ -390,7 +389,7 @@ def on_release(key):
 
 def DroneManualInput(drone):
     hover_force_mult = 0.29  # Example force in the negative z-direction
-    mov_force_mult = 0.3  # Example force in the negative z-direction
+    mov_force_mult = 0.3 # Example force in the negative z-direction
 
     if keys[keyboard.Key.space]:
         # point = chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0)  # Example force in the negative z-direction
@@ -472,7 +471,8 @@ if __name__ == '__main__':
 
     make_path_dense(paths, 0.1)
 
-    simulation = Simulation(PointsConfig(5, 100, 10, 1, 10.0, 4, 10, 0.05, 0.1))
+    points_config = PointsConfig(30, 20, 80, 10, 7, 0.5, 4, 40, 15)
+    simulation = Simulation(points_config)
     simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=False)
 
     window = SimulationVisual(simulation)

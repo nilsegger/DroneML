@@ -5,7 +5,7 @@ from pynput import keyboard
 from train import *
 from sim import Simulation, paths, make_path_dense, PointsConfig, SimulationVisual
 
-instance_file = 'progress_gen_1_2023-04-25_11-28-21'  # no extension!
+instance_file = 'output/progress_gen_1000_2023-04-24_23-58-05'  # no extension!
 
 ga_instance = pygad.load(instance_file)
 
@@ -71,10 +71,10 @@ while vis.is_window_open():
     vis.render()
 
     if keys_clicked['n']:
-        print("Hello")
         keys_clicked['n'] = False
         model_index = (model_index + 1) % len(solutions)
         model = get_model_from_solution(original_model, solutions[model_index])
         simulation.clear()
         simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=False)
         vis.bind_from_simulation()
+        print("Showing solution", model_index)
