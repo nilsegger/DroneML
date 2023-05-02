@@ -3,12 +3,13 @@ import numpy as np
 import pygad.kerasga
 
 
-def create_model(input_size, hiddenlayer1_size, hiddenlayer2_size, output_layer_size):
+def create_model(input_size, hidden_sizes, output_layer_size):
     input_layer = tf.keras.layers.Input(input_size)
-    dense_layer1 = tf.keras.layers.Dense(hiddenlayer1_size, activation="relu")(input_layer)
-    dense_layer2 = tf.keras.layers.Dense(hiddenlayer2_size, activation="relu")(dense_layer1)
-    output_layer = tf.keras.layers.Dense(output_layer_size, activation="tanh")(dense_layer2)
 
+    last = input_layer
+    for s in hidden_sizes:
+        last = tf.keras.layers.Dense(s, activation="relu")(last)
+    output_layer = tf.keras.layers.Dense(output_layer_size, activation="tanh")(last)
     return tf.keras.Model(inputs=input_layer, outputs=output_layer)
 
 

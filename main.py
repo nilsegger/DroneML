@@ -3,26 +3,38 @@ import time
 import random
 import pickle
 
+import numpy as np
+
 from sim import Simulation, paths, make_path_dense, PointsConfig
 from train import *
 
 load_ga_instance_file = None  # if none no file will be loaded, no extension!
-save_every_n_gens = 100  # if none only final result is saved
+save_every_n_gens = 10  # if none only final result is saved
 
 input_size = 17
-hiddenlayer1_size = 256
-hiddenlayer2_size = 256
+hidden_layer_sizes = [11]
 output_layer_size = 4
 
-step = 1 / 30
-timeout_per_simulation = 20.0
-points_config = PointsConfig(30, 20, 80, 10, 7, 0.5, 4, 40, 15)
-
-num_solutions = 10
-num_generations = 1
-num_parents_mating = 4
+step = 1 / 24
+timeout_per_simulation = 5.0
 
 batch_size = 10
+points_config = PointsConfig(100, 0.2, 10, 1000, 100, 20, 10, 1, 5, 500, 100)
+
+num_solutions = 20
+num_generations = 100
+num_parents_mating = 4
+
+parent_selection_type = "sus"
+keep_elitism = 3
+
+crossover_type = "single_point"
+
+mutation_type = "adaptive"
+mutation_probability = (0.8, 0.05)
+
+allow_duplicate_genes = False
+
 
 
 def get_time_formatted():
@@ -101,12 +113,12 @@ if __name__ == '__main__':
 
     simulation = Simulation(points_config)
 
-    keras_model = create_model(input_size, hiddenlayer1_size, hiddenlayer2_size, output_layer_size)
+    keras_model = create_model(input_size, hidden_layer_sizes, output_layer_size)
 
     keras_ga = pygad.kerasga.KerasGA(model=keras_model,
                                      num_solutions=num_solutions)
 
-    make_path_dense(paths, 0.1)
+    make_path_dense(paths, 0.2)
 
     initial_population = keras_ga.population_weights  # Initial population of network weights
 
@@ -119,7 +131,16 @@ if __name__ == '__main__':
             initial_population=initial_population,
             fitness_func=fitness_func,
             fitness_batch_size=batch_size,
-            on_generation=callback_generation
+            on_generation=callback_generation,
+            parent_selection_type=parent_selection_type,
+            crossover_type=crossover_type,
+            mutation_type=mutation_type,
+            mutation_probability=mutation_probability,
+            keep_elitism=keep_elitism,
+            # mutation_num_genes=mutation_num_genes,
+            # mutation_percent_genes=mutation_percent_genes,
+            allow_duplicate_genes=allow_duplicate_genes
+
         )
     else:
         ga_instance = pygad.load(load_ga_instance_file)

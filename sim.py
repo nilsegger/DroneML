@@ -47,7 +47,7 @@ class Propeller:
 
 class PointsConfig:
 
-    def __init__(self, abrupt_penalty, points_for_target, crash_penalty, standstill_penalty,
+    def __init__(self, points_for_target, target_thresh_for_points, rotate_thresh_for_penalty, abrupt_penalty, crash_penalty, standstill_penalty,
                  standstill_timeout, min_distance_for_penalty, max_distance_for_penalty, distance_penalty,
                  floor_penalty):
         self.abrupt_penalty = abrupt_penalty
@@ -60,6 +60,8 @@ class PointsConfig:
         self.max_distance_for_penalty = max_distance_for_penalty
         self.distance_penalty = distance_penalty
         self.floor_penalty = floor_penalty
+        self.rotate_thresh = rotate_thresh_for_penalty
+        self.target_thresh = target_thresh_for_points
 
 
 class Drone:
@@ -200,23 +202,19 @@ class Drone:
     def fitness_update(self, step):
 
         # Smoothness
-        thresh = 3
         current_rotation_dt = self.body.GetRot_dt()
 
         rot_sum = abs(current_rotation_dt.e0) + abs(current_rotation_dt.e1) + abs(current_rotation_dt.e2) + abs(
             current_rotation_dt.e3)
 
-        if rot_sum >= thresh:
+        if rot_sum >= self.points_config.rotate_thresh * step:
             self.points -= self.points_config.abrupt_penalty * step
-
-        # Target following
-        target_thresh = 0.4
 
         if self.path_next < len(self.path):
             next_target = self.path[self.path_next]
             distance = (next_target - self.body.GetPos()).Length()
 
-            if distance < target_thresh:  # target was hit
+            if distance < self.points_config.target_thresh:  # target was hit
                 self.points += self.points_config.points_for_target
                 self.path_next += 1
 
@@ -446,8 +444,17 @@ def DroneManualInput(drone):
 
 
 paths = [
-
     [
+        chrono.ChVectorD(0, 0, 0),
+        chrono.ChVectorD(0, 5, 0),
+        chrono.ChVectorD(0, 3, 0),
+        chrono.ChVectorD(0, 5, 0),
+        chrono.ChVectorD(0, 0, 0)
+    ]
+]
+
+"""
+[
         chrono.ChVectorD(0, 0, 0),
         chrono.ChVectorD(2, 2, 0),
         chrono.ChVectorD(2, 4, 2),
@@ -459,7 +466,7 @@ paths = [
         chrono.ChVectorD(0, 0, 0),
     ],
 
-]
+"""
 
 if __name__ == '__main__':
 
@@ -469,9 +476,9 @@ if __name__ == '__main__':
 
     listener.start()
 
-    make_path_dense(paths, 0.1)
+    make_path_dense(paths, 0.20)
 
-    points_config = PointsConfig(30, 20, 80, 10, 7, 0.5, 4, 40, 15)
+    points_config = PointsConfig(100, 0.2, 10, 25, 100, 20, 10, 1, 5, 500, 100)
     simulation = Simulation(points_config)
     simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=False)
 
