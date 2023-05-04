@@ -9,14 +9,14 @@
 # http://projectchrono.org/license-chrono.txt.
 #
 # =============================================================================
-
-
+import numpy
 import pychrono.core as chrono
 import pychrono.irrlicht as chronoirr
 from pynput import keyboard
 import math
 import random
 import time
+import numpy as np
 
 
 def make_path_dense(path, mindisthreshold):
@@ -47,7 +47,8 @@ class Propeller:
 
 class PointsConfig:
 
-    def __init__(self, points_for_target, target_thresh_for_points, rotate_thresh_for_penalty, abrupt_penalty, crash_penalty, standstill_penalty,
+    def __init__(self, points_for_target, target_thresh_for_points, rotate_thresh_for_penalty, abrupt_penalty,
+                 crash_penalty, standstill_penalty,
                  standstill_timeout, min_distance_for_penalty, max_distance_for_penalty, distance_penalty,
                  floor_penalty):
         self.abrupt_penalty = abrupt_penalty
@@ -179,16 +180,18 @@ class Drone:
         line_vec = line_end - line_start
         point_vec = self.body.GetPos() - line_start
 
-        # Calculate the parameter value 't' where the projection of point_vec onto line_vec is at its maximum
-        t = max(min(point_vec.Dot(line_vec) / line_vec.Length2(), 1), 0)
-
-        # Calculate the closest point on the line segment to the given point
-        closest_point = line_start + line_vec * t
+        if line_vec.Length() != 0:
+            # Calculate the parameter value 't' where the projection of point_vec onto line_vec is at its maximum
+            t = max(min(point_vec.Dot(line_vec) / line_vec.Length2(), 1), 0)
+            # Calculate the closest point on the line segment to the given point
+            closest_point = line_start + line_vec * t
+        else:
+            closest_point = line_start
 
         direction = (line_end - line_start).GetNormalized()
 
         distance = (line_end - closest_point).Length()
-        offset = 0.1
+        offset = 1
 
         if offset > distance:
             offset = distance
@@ -219,7 +222,9 @@ class Drone:
                 self.path_next += 1
 
             if distance > self.points_config.min_distance_for_penalty:
-                self.points -= (self.points_config.distance_penalty * step) / (self.points_config.max_distance_for_penalty - self.points_config.min_distance_for_penalty) * (distance - self.points_config.min_distance_for_penalty)
+                self.points -= (self.points_config.distance_penalty * step) / (
+                        self.points_config.max_distance_for_penalty - self.points_config.min_distance_for_penalty) * (
+                                       distance - self.points_config.min_distance_for_penalty)
 
         if not self.body.GetContactForce().IsNull() and self.path_next < len(self.path):
             self.points -= self.points_config.floor_penalty * step
@@ -355,6 +360,7 @@ keys = {
     'x': False,
     'e': False,
     'r': False,
+    'p': False,
     '0': False,
     '1': False,
     '2': False,
@@ -387,15 +393,12 @@ def on_release(key):
 
 def DroneManualInput(drone):
     hover_force_mult = 0.29  # Example force in the negative z-direction
-    mov_force_mult = 0.3 # Example force in the negative z-direction
+    mov_force_mult = 0.3  # Example force in the negative z-direction
 
     if keys[keyboard.Key.space]:
         # point = chrono.ChVectorD(drone_x / 2.0, 0, -drone_z / 2.0)  # Example force in the negative z-direction
         for prop in drone.propellers:
             prop.force = 1.0
-    elif keys['x']:
-        for prop in drone.propellers:
-            prop.force = 0.55
     elif keys['w']:
         drone.propellers[0].force = hover_force_mult
         drone.propellers[1].force = hover_force_mult
@@ -443,17 +446,72 @@ def DroneManualInput(drone):
         drone.propellers[3].force = 0.0
 
 
+def StabiliseDrone(drone):
+    rot = drone.body.GetRot().Q_to_Euler123()
+
+    pitch = rot.z
+    yaw = rot.y
+    roll = rot.x
+
+    # stabilise y
+    vel_force = drone.body.GetPos_dt().y * drone.mass
+    weight_force = drone.mass * 9.81 - vel_force
+    for propeller in drone.propellers:
+        propeller.force = min(1.0, max(0.0,
+                                       weight_force / drone.max_force.y / 4.0))  # scale to 0 to 1 and /4 because of 4 props
+
+
+def follow_y_path(drone):
+    distance = drone.target.y - drone.body.GetPos().y
+
+    time_it_takes_to_reach = math.sqrt((2.0 * math.fabs(distance)) / 9.81)
+    required_acceleration = 2 * distance / (math.pow(time_it_takes_to_reach, 2))
+
+    force_required = drone.mass * required_acceleration
+
+    vel_force = drone.body.GetPos_dt().y * drone.mass
+    weight_force = drone.mass * 9.81 - vel_force
+    current_force = -weight_force
+
+    if distance >= 0.0:
+        # drone must fly up
+        if current_force < force_required:
+
+            force_wanted = force_required - current_force
+
+            for propeller in drone.propellers:
+                propeller.force = max(-1.0, min(1.0, 1.0 / drone.max_force.y / 4.0 * force_wanted))
+        else:
+            for propeller in drone.propellers:
+                propeller.force = 0
+    else:
+        # drone must "fall"
+
+        vel_force = drone.body.GetPos_dt().y * drone.mass
+        weight_force = -vel_force
+
+        if drone.body.GetPos_dt().y < 0.0 and math.fabs(weight_force) > drone.max_force.y:
+            for propeller in drone.propellers:
+                propeller.force = 1.0
+        else:
+            for propeller in drone.propellers:
+                propeller.force = 0
+
 paths = [
     [
-        chrono.ChVectorD(0, 0, 0),
-        chrono.ChVectorD(0, 5, 0),
-        chrono.ChVectorD(0, 3, 0),
-        chrono.ChVectorD(0, 5, 0),
-        chrono.ChVectorD(0, 0, 0)
     ]
 ]
 
 """
+
+[
+    chrono.ChVectorD(0, 0, 0),
+    chrono.ChVectorD(0, 5, 0),
+    chrono.ChVectorD(0, 3, 0),
+    chrono.ChVectorD(0, 5, 0),
+    chrono.ChVectorD(0, 0, 0)
+]
+
 [
         chrono.ChVectorD(0, 0, 0),
         chrono.ChVectorD(2, 2, 0),
@@ -465,7 +523,6 @@ paths = [
         chrono.ChVectorD(0, 12, 0),
         chrono.ChVectorD(0, 0, 0),
     ],
-
 """
 
 if __name__ == '__main__':
@@ -476,11 +533,19 @@ if __name__ == '__main__':
 
     listener.start()
 
-    make_path_dense(paths, 0.20)
+    x_offset = random.randrange(0, 5000) / 100.0
+    z_offset = random.randrange(0, 5000) / 100.0
+
+    for i in range(1000):
+        y_point = random.randrange(0, 5000) / 100.0
+        paths[0].append(chrono.ChVectorD(x_offset, y_point, z_offset))
+
+    # make_path_dense(paths, 1)
 
     points_config = PointsConfig(100, 0.2, 10, 25, 100, 20, 10, 1, 5, 500, 100)
     simulation = Simulation(points_config)
     simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=False)
+    simulation.drones[0].body.SetPos(chrono.ChVectorD(x_offset, 0.02, z_offset))
 
     window = SimulationVisual(simulation)
 
@@ -490,8 +555,12 @@ if __name__ == '__main__':
     frames_time = 0
 
     last_points = 0
+    last_path_next = 1
 
     current_drone = 0
+
+    training_data = []
+
     while window.is_window_open():
 
         end_time = time.time()
@@ -502,20 +571,45 @@ if __name__ == '__main__':
 
         frames += 1
         frames_time += elapsed_time
-        simulation.update(elapsed_time)
+        simulation.update(1/30)
 
         drones_char = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 
         for i in range(len(drones_char)):
             if keys[drones_char[i]]:
                 current_drone = i
-        DroneManualInput(simulation.drones[current_drone])
 
-        window.render()
+        follow_y_path(simulation.drones[current_drone])
+
+        """
+        if keys['x']:
+            StabiliseDrone(simulation.drones[current_drone], elapsed_time)
+        else:
+            DroneManualInput(simulation.drones[current_drone])
+        """
+
+        if not simulation.drones[current_drone].target.IsNull():
+            training_data.append(simulation.drones[current_drone].ml + [propeller.force for propeller in
+                                                                    simulation.drones[current_drone].propellers])
+
+        #if simulation.drones[current_drone].body.GetPos().x != x_offset or simulation.drones[current_drone].body.GetPos().z != z_offset:
+            #print("Drone got offset.")
+            #break
+
+        if simulation.drones[current_drone].target.IsNull():
+            print("Finished all points")
+            break
+
+        if keys['p']:
+            window.render()
 
         if last_points != simulation.drones[current_drone].points:
             last_points = simulation.drones[current_drone].points
-            print(last_points)
+            # print(last_points)
+
+        if last_path_next != simulation.drones[current_drone].path_next:
+            last_path_next = simulation.drones[current_drone].path_next
+            print(last_path_next)
 
         if frames == 100:
             timeout = 30.0
@@ -534,3 +628,5 @@ if __name__ == '__main__':
 
             frames = 0
             frames_time = 0
+
+    np.savetxt("training.csv", numpy.asarray(training_data), delimiter=',')

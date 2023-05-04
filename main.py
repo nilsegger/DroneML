@@ -1,40 +1,88 @@
 import datetime
+import keras
 import time
 import random
 import pickle
+import pychrono.core as chrono
+from pygad.kerasga import model_weights_as_vector
+import copy
 
-import numpy as np
+import numpy
 
-from sim import Simulation, paths, make_path_dense, PointsConfig
+from sim import Simulation, make_path_dense, PointsConfig
 from train import *
+
+paths = [
+    [
+        chrono.ChVectorD(0, 0, 0),
+        chrono.ChVectorD(0, 5, 0),
+        chrono.ChVectorD(0, 3, 0),
+        chrono.ChVectorD(0, 5, 0),
+        chrono.ChVectorD(0, 0, 0)
+    ]
+]
+
+initial_population_model_save = 'pretrained_models/model_64_128_64_2023-05-04_12-42-01'
 
 load_ga_instance_file = None  # if none no file will be loaded, no extension!
 save_every_n_gens = 10  # if none only final result is saved
 
 input_size = 17
-hidden_layer_sizes = [11]
+hidden_layer_sizes = [64, 128, 64]
 output_layer_size = 4
 
-step = 1 / 24
-timeout_per_simulation = 5.0
+step = 1 / 30
+timeout_per_simulation = 10
 
 batch_size = 10
 points_config = PointsConfig(100, 0.2, 10, 1000, 100, 20, 10, 1, 5, 500, 100)
 
 num_solutions = 20
-num_generations = 100
+num_generations = 10
 num_parents_mating = 4
 
 parent_selection_type = "sus"
-keep_elitism = 3
+keep_elitism = 2
 
-crossover_type = "single_point"
 
-mutation_type = "adaptive"
-mutation_probability = (0.8, 0.05)
+class CustomKerasGA:
 
-allow_duplicate_genes = False
+    def __init__(self, model, num_solutions):
+        """
+        Creates an instance of the KerasGA class to build a population of model parameters.
 
+        model: A Keras model class.
+        num_solutions: Number of solutions in the population. Each solution has different model parameters.
+        """
+
+        self.model = model
+
+        self.num_solutions = num_solutions
+
+        # A list holding references to all the solutions (i.e. networks) used in the population.
+        self.population_weights = self.create_population()
+
+    def create_population(self):
+        """
+        Creates the initial population of the genetic algorithm as a list of networks' weights (i.e. solutions). Each element in the list holds a different weights of the Keras model.
+
+        The method returns a list holding the weights of all solutions.
+        """
+
+        model_weights_vector = model_weights_as_vector(model=self.model)
+
+        net_population_weights = []
+        net_population_weights.append(model_weights_vector)
+
+        for idx in range(self.num_solutions - 1):
+            net_weights = copy.deepcopy(model_weights_vector)
+            net_weights = numpy.array(net_weights) # + numpy.random.uniform(low=-1.0, high=1.0,
+                                                                          # size=model_weights_vector.size)
+
+            # Appending the weights to the population.
+            net_population_weights.append(net_weights)
+
+        return net_population_weights
 
 
 def get_time_formatted():
@@ -115,12 +163,23 @@ if __name__ == '__main__':
 
     keras_model = create_model(input_size, hidden_layer_sizes, output_layer_size)
 
-    keras_ga = pygad.kerasga.KerasGA(model=keras_model,
+    """
+    train_model(keras_model,
+                ['training/training1.csv', 'training/training2.csv', 'training/training3.csv', 'training/training4.csv',
+                 'training/training5.csv'])
+    """
+
+    if initial_population_model_save is not None:
+        keras_model = keras.models.load_model(initial_population_model_save)
+
+    keras_ga = CustomKerasGA(model=keras_model,
                                      num_solutions=num_solutions)
 
-    make_path_dense(paths, 0.2)
+    # make_path_dense(paths, 0.2)
 
     initial_population = keras_ga.population_weights  # Initial population of network weights
+
+
 
     ga_instance = None
 
@@ -133,14 +192,7 @@ if __name__ == '__main__':
             fitness_batch_size=batch_size,
             on_generation=callback_generation,
             parent_selection_type=parent_selection_type,
-            crossover_type=crossover_type,
-            mutation_type=mutation_type,
-            mutation_probability=mutation_probability,
             keep_elitism=keep_elitism,
-            # mutation_num_genes=mutation_num_genes,
-            # mutation_percent_genes=mutation_percent_genes,
-            allow_duplicate_genes=allow_duplicate_genes
-
         )
     else:
         ga_instance = pygad.load(load_ga_instance_file)

@@ -1,17 +1,28 @@
 import time
 import random
 from pynput import keyboard
+import pychrono.core as chrono
 
 from train import *
-from sim import Simulation, paths, make_path_dense, PointsConfig, SimulationVisual
+from sim import Simulation, PointsConfig, SimulationVisual
 
-instance_file = 'output/progress_gen_100_2023-05-02_17-27-23'  # no extension!
+paths = [
+    [
+        chrono.ChVectorD(0, 0, 0),
+        chrono.ChVectorD(0, 5, 0),
+        chrono.ChVectorD(0, 3, 0),
+        chrono.ChVectorD(0, 5, 0),
+        chrono.ChVectorD(0, 0, 0)
+    ]
+]
+
+instance_file = 'output/progress_gen_10_2023-05-04_14-49-13'  # no extension!
 
 ga_instance = pygad.load(instance_file)
 
 solutions = ga_instance.population
 
-make_path_dense(paths, 0.1)
+# make_path_dense(paths, 0.1)
 
 points_config = PointsConfig(100, 0.2, 10, 25, 100, 20, 10, 1, 5, 500, 100)
 simulation = Simulation(points_config)
@@ -19,7 +30,7 @@ simulation.setup_world(random.choice(paths), 1, ignore_visualisation_objects=Fal
 
 vis = SimulationVisual(simulation)
 
-original_model = create_model(17, [7], 4)
+original_model = create_model(17, [64, 128, 64], 4)
 model_index = 0
 model = get_model_from_solution(original_model, solutions[model_index])
 
