@@ -25,7 +25,7 @@ paths = [
 initial_population_model_save = 'pretrained_models/model_64_128_64_2023-05-04_12-42-01'
 
 load_ga_instance_file = None  # if none no file will be loaded, no extension!
-save_every_n_gens = 10  # if none only final result is saved
+save_every_n_gens = 500  # if none only final result is saved
 
 input_size = 17
 hidden_layer_sizes = [64, 128, 64]
@@ -34,16 +34,26 @@ output_layer_size = 4
 step = 1 / 30
 timeout_per_simulation = 10
 
-batch_size = 10
+batch_size = 20
 points_config = PointsConfig(100, 0.2, 10, 1000, 100, 20, 10, 1, 5, 500, 100)
 
-num_solutions = 20
-num_generations = 10
+num_solutions = 40
+num_generations = 2000
 num_parents_mating = 4
 
 parent_selection_type = "sus"
-keep_elitism = 2
 
+crossover_type = "single_point"
+crossover_probability = 0.1
+
+keep_elitism = 15
+
+mutation_type = "random"
+mutation_probability = 0.00001
+mutation_by_replacement = True
+
+random_mutation_min_val = -0.1
+random_mutation_max_val = 0.1
 
 class CustomKerasGA:
 
@@ -192,7 +202,14 @@ if __name__ == '__main__':
             fitness_batch_size=batch_size,
             on_generation=callback_generation,
             parent_selection_type=parent_selection_type,
+            mutation_probability=mutation_probability,
+            mutation_type=mutation_type,
+            mutation_by_replacement=mutation_by_replacement,
+            crossover_type=crossover_type,
+            crossover_probability=crossover_probability,
             keep_elitism=keep_elitism,
+            random_mutation_min_val=random_mutation_min_val,
+            random_mutation_max_val=random_mutation_max_val
         )
     else:
         ga_instance = pygad.load(load_ga_instance_file)
