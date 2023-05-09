@@ -18,18 +18,19 @@ paths = [
         chrono.ChVectorD(0, 5, 0),
         chrono.ChVectorD(0, 3, 0),
         chrono.ChVectorD(0, 5, 0),
-        chrono.ChVectorD(0, 0, 0)
+        chrono.ChVectorD(0, 1, 0),
+        chrono.ChVectorD(0, 7, 0)
     ]
 ]
 
 initial_population_model_save = 'pretrained_models/model_64_128_64_2023-05-04_12-42-01'
 
-load_ga_instance_file = None  # if none no file will be loaded, no extension!
-save_every_n_gens = 500  # if none only final result is saved
+load_ga_instance_file = 'output/progress_gen_350_2023-05-08_18-58-55' # if none no file will be loaded, no extension!
+save_every_n_gens = 50  # if none only final result is saved
 
 input_size = 17
 hidden_layer_sizes = [64, 128, 64]
-output_layer_size = 4
+output_layer_size = 10
 
 step = 1 / 30
 timeout_per_simulation = 10
@@ -38,7 +39,7 @@ batch_size = 20
 points_config = PointsConfig(100, 0.2, 10, 1000, 100, 20, 10, 1, 5, 500, 100)
 
 num_solutions = 40
-num_generations = 2000
+num_generations = 1000
 num_parents_mating = 4
 
 parent_selection_type = "sus"
@@ -46,14 +47,14 @@ parent_selection_type = "sus"
 crossover_type = "single_point"
 crossover_probability = 0.1
 
-keep_elitism = 15
+keep_elitism = 10
 
 mutation_type = "random"
-mutation_probability = 0.00001
-mutation_by_replacement = True
+mutation_probability = 0.002
+mutation_by_replacement = False
 
-random_mutation_min_val = -0.1
-random_mutation_max_val = 0.1
+random_mutation_min_val = -0.00002
+random_mutation_max_val = 0.00002
 
 class CustomKerasGA:
 
@@ -218,6 +219,9 @@ if __name__ == '__main__':
         ga_instance.num_generations = num_generations
         ga_instance.num_parents_mating = num_parents_mating
         ga_instance.fitness_batch_size = batch_size
+        ga_instance.mutation_probability = mutation_probability
+        ga_instance.random_mutation_min_val = random_mutation_min_val
+        ga_instance.random_mutation_max_val = random_mutation_max_val
 
     ga_instance.run()
 
