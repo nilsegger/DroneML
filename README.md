@@ -3,9 +3,9 @@
 This repository was created for a course at ETH called Optimization Methods.
 Our goal was to create a neural network which would control a drone given position, rotation, speed, etc as inputs.
 
-Sadly the time scope and complexity of the project got out of hand and had to be replaced. 
+Sadly the time scope and complexity of the project got out of hand and had to be adapted. 
 
-Following is a video of our final progress.
+Following is a video of our current progress.
 
 [result.webm](https://github.com/nilsegger/DroneML/assets/19248965/bfe47362-5496-4162-940f-fc4737e11e79)
 
